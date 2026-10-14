@@ -13,12 +13,11 @@ SOCKS5-процесс, а DPI-стратегия применяется лока
 
 Вдохновляющий проект [ByeDPIAndroid](https://github.com/dovecoteescapee/ByeDPIAndroid)
 — GPL-3.0 и использует ByeDPI (MIT) и hev-socks5-tunnel (MIT). Android-подпроект
-Local Route поэтому выпускается под GPL-3.0-or-later. В этом MVP их исходный код
-не скопирован и бинарники не включены: `NativeTunnelBridge` — явная точка будущей
-интеграции проверенной исходной поставки. До добавления нативных библиотек
-локальный режим не заявляется работающим: сервис возвращает понятную ошибку, а
-не создаёт «VPN», который молча ломает трафик. Notices и ссылки на исходники
-находятся в `app/src/main/assets/licenses/`.
+Local Route поэтому выпускается под GPL-3.0-or-later. Вендорены как Git
+submodules фиксированные исходники ByeDPI и hev-socks5-tunnel; JNI-граница
+ByeDPI собрана из аудированного референса, а `NativeTunnelBridge` остаётся
+точкой подключения tun2socks. Notices, SHA и ссылки на исходники находятся в
+`app/src/main/assets/licenses/`.
 
 `SECURE_TUNNEL` — отдельный интерфейс и конфигурация для будущего собственного
 сервера пользователя; подключений в MVP нет.

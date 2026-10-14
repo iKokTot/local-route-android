@@ -11,15 +11,18 @@ this repository is the intended source location when publication is authorised.
 * **ByeDPIAndroid** — GPL-3.0, copyright its contributors.
   Source: https://github.com/dovecoteescapee/ByeDPIAndroid
   License: https://github.com/dovecoteescapee/ByeDPIAndroid/blob/master/LICENSE
-  It is an architectural reference; no code or binary from it is in this MVP.
+  Its local-VPN/JNI architecture was reviewed. The small JNI boundary in this
+  project is adapted from that architecture and is GPL-3.0-or-later.
 * **ByeDPI** — MIT, copyright hufrea and contributors.
   Source: https://github.com/hufrea/byedpi
   License: https://github.com/hufrea/byedpi/blob/main/LICENSE
-  Planned only as a locally compiled SOCKS5 DPI engine.
+  Vendored as the `app/src/main/cpp/byedpi` Git submodule at
+  `078842b084853bc30f33eaaec7acc510cf67e560`.
 * **hev-socks5-tunnel** — MIT, copyright heiher and contributors.
   Source: https://github.com/heiher/hev-socks5-tunnel
   License: https://github.com/heiher/hev-socks5-tunnel/blob/main/LICENSE
-  Planned only as the local TUN-to-SOCKS bridge.
+  Vendored as the `app/src/main/jni/hev-socks5-tunnel` Git submodule at
+  `677bb4530cfc867cd44d88d298960c8d8d9fbfad`.
 
 If any of these native sources is vendored or linked later, retain its copyright
 and license texts here, record exact revision hashes, and make the matching
