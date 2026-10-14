@@ -12,7 +12,9 @@ import org.localroute.android.core.AndroidStrategies
 
 class LocalDpiVpnService : VpnService() {
     companion object { const val ACTION_START = "org.localroute.START"; const val ACTION_STOP = "org.localroute.STOP"; private const val CHANNEL = "local_route_vpn" }
-    private val engine: NativeTunnelBridge = UnavailableNativeTunnelBridge
+    private lateinit var engine: NativeTunnelBridge
+
+    override fun onCreate() { super.onCreate(); engine = AndroidNativeTunnelBridge(this) }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopLocal(); return Service.START_NOT_STICKY }
