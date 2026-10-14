@@ -11,6 +11,8 @@ import androidx.core.app.NotificationCompat
 import org.localroute.android.MainActivity
 import org.localroute.android.R
 import org.localroute.android.core.AndroidStrategies
+import org.localroute.android.core.DpiStrategy
+import java.util.concurrent.Executors
 
 class LocalDpiVpnService : VpnService() {
     companion object {
@@ -23,6 +25,7 @@ class LocalDpiVpnService : VpnService() {
 
     private lateinit var engine: NativeTunnelBridge
     private var tun: ParcelFileDescriptor? = null
+    private val worker = Executors.newSingleThreadExecutor()
 
     override fun onCreate() {
         super.onCreate()
@@ -31,26 +34,42 @@ class LocalDpiVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopLocal()
+            worker.execute(::stopLocal)
             return START_NOT_STICKY
         }
         val strategy = AndroidStrategies.all.firstOrNull {
             it.id == intent?.getStringExtra(EXTRA_STRATEGY)
         } ?: AndroidStrategies.all.first()
+        val packages = intent?.getStringArrayExtra(EXTRA_PACKAGES) ?: emptyArray()
 
         LocalDpiRuntime.update(EnginePhase.STARTING, "Запуск ${strategy.title}…", strategy.id)
         startForeground(7, notification(strategy.title))
+        worker.execute { startLocal(strategy, packages) }
+        return START_STICKY
+    }
+
+    /**
+     * Establishing the native proxy and probing its local SOCKS socket must not
+     * run in Android's main thread. Besides keeping the service responsive,
+     * this avoids NetworkOnMainThreadException during the readiness handshake.
+     */
+    private fun startLocal(strategy: DpiStrategy, packages: Array<String>) {
         resetEngine()
 
-        val packages = intent?.getStringArrayExtra(EXTRA_PACKAGES) ?: emptyArray()
-        if (packages.isEmpty()) return fail("Не выбран ни один сервис")
+        if (packages.isEmpty()) {
+            fail("Не выбран ни один сервис")
+            return
+        }
 
         val builder = Builder()
             .setSession("Local Route · ${strategy.title}")
-            .setMtu(1500)
-            .addAddress("10.7.0.2", 32)
+            .addAddress("10.10.10.10", 32)
             .addRoute("0.0.0.0", 0)
             .addDnsServer("1.1.1.1")
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            builder.setMetered(false)
+        }
 
         var allowed = 0
         packages.forEach { packageName ->
@@ -61,14 +80,20 @@ class LocalDpiVpnService : VpnService() {
                 // A selected app may simply not be installed. Other selected apps still work.
             }
         }
-        if (allowed == 0) return fail("YouTube или Discord не установлены на устройстве")
+        if (allowed == 0) {
+            fail("YouTube или Discord не установлены на устройстве")
+            return
+        }
 
-        val descriptor = builder.establish() ?: return fail("Android не создал VPN-интерфейс")
+        val descriptor = builder.establish()
+        if (descriptor == null) {
+            fail("Android не создал VPN-интерфейс")
+            return
+        }
         tun = descriptor
         val result = engine.start(descriptor, strategy)
-        return if (result.isSuccess) {
+        if (result.isSuccess) {
             LocalDpiRuntime.update(EnginePhase.ACTIVE, "Активна: ${strategy.title}", strategy.id)
-            START_STICKY
         } else {
             fail(result.exceptionOrNull()?.message ?: "Не удалось запустить локальный движок")
         }
@@ -97,10 +122,9 @@ class LocalDpiVpnService : VpnService() {
             .build()
     }
 
-    private fun fail(error: String): Int {
+    private fun fail(error: String) {
         LocalDpiRuntime.update(EnginePhase.ERROR, error)
         shutdown(reportStopped = false)
-        return START_NOT_STICKY
     }
 
     private fun stopLocal() = shutdown(reportStopped = true)
@@ -120,6 +144,7 @@ class LocalDpiVpnService : VpnService() {
 
     override fun onDestroy() {
         resetEngine()
+        worker.shutdownNow()
         super.onDestroy()
     }
 

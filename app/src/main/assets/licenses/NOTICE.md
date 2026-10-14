@@ -14,11 +14,17 @@ this repository is the intended source location when publication is authorised.
   Its local-VPN/JNI architecture was reviewed. The JNI boundary and local
   VpnService/SOCKS design in this project are adapted from that architecture
   and distributed under GPL-3.0-or-later. No source was copied without review.
+* **ByeByeDPI** — GPL-3.0, copyright its contributors.
+  Source: https://github.com/romanvht/ByeByeDPI
+  License: https://github.com/romanvht/ByeByeDPI/blob/master/LICENSE
+  Revision reviewed: `4ca350c1831c405010cd7548c3d89ddbbe68f68a`.
+  Its maintained ByeDPI 17 JNI lifecycle and Android build configuration were
+  reviewed and adapted. These adaptations remain GPL-3.0-or-later.
 * **ByeDPI** — MIT, copyright hufrea and contributors.
   Source: https://github.com/hufrea/byedpi
   License: https://github.com/hufrea/byedpi/blob/main/LICENSE
   Vendored as the `app/src/main/cpp/byedpi` Git submodule at
-  `078842b084853bc30f33eaaec7acc510cf67e560`.
+  `ba532298de7b28cfe854aea83d061369d13ca290` (ByeDPI 17.3).
 * **hev-socks5-tunnel** — MIT, copyright hev and contributors.
   Source: https://github.com/heiher/hev-socks5-tunnel
   License: https://github.com/heiher/hev-socks5-tunnel/blob/main/LICENSE
@@ -39,6 +45,7 @@ are packaged as `hev-socks5-tunnel-MIT.txt`, `hev-task-system-MIT.txt`,
 ## Java/Kotlin dependencies
 
 AndroidX and Jetpack Compose are consumed as normal Android libraries. Their
-license metadata is resolved by Gradle; their source/license details are linked
-from https://developer.android.com/jetpack/androidx/releases and
-https://github.com/androidx/androidx.
+source is published under the Apache License 2.0, and Kotlin/coroutines are also
+Apache-2.0 components. Their source/license details are available from
+https://github.com/androidx/androidx and https://github.com/JetBrains/kotlin.
+The complete common license text is packaged as `Apache-2.0.txt`.

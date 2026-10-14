@@ -24,12 +24,46 @@ data class DpiStrategy(
 object AndroidStrategies {
     // Parameters are intentionally Android/local-SOCKS oriented, not WinDivert presets.
     val all = listOf(
+        DpiStrategy(
+            "byedpi-17-default",
+            "ByeDPI 17 · Default",
+            "Актуальный профиль OOB + UDP fake + TLS Record.",
+            listOf("-o1", "-a1", "-r-5+se")
+        ),
+        DpiStrategy(
+            "android-multipoint",
+            "Android Multipoint",
+            "Disorder и серия точек разбиения для современных блокировок.",
+            listOf("--disorder", "1", "--split", "1+s", "--split", "3+s", "--split", "6+s", "--split", "9+s", "--split", "12+s", "--split", "15+s", "--split", "20+s", "--split", "30+s", "--udp-fake", "1")
+        ),
+        DpiStrategy(
+            "youtube-discord-chain",
+            "YouTube + Discord Chain",
+            "Многоступенчатый профиль Split/OOB/Fake с автоматическим переключением.",
+            listOf("-s1", "-q1", "-Y", "-Ar", "-s5", "-o1+s", "-At", "-f-1", "-r1+s", "-As", "-s1", "-o1+s", "-s-1", "-An", "-b+500")
+        ),
+        DpiStrategy(
+            "adaptive-oob-fake",
+            "Adaptive OOB + Fake",
+            "Цепочка OOB/Fake для сетей с меняющейся фильтрацией.",
+            listOf("-o1", "-a1", "-At,r,s", "-f-1", "-a1", "-Ar,s", "-o1", "-a1", "-At", "-r1+s", "-f-1", "-t6", "-a1")
+        ),
+        DpiStrategy(
+            "oob-tls-fallback",
+            "OOB + TLS Fallback",
+            "Две OOB-точки и резервный TLS Record по тайм-ауту.",
+            listOf("--oob", "1", "--oob", "25+s", "--timeout", "3", "--auto=torst", "--tlsrec", "1+s")
+        ),
+        DpiStrategy("android-disorder-1", "Android Disorder · 1", "Базовый Linux/Android-профиль ByeDPI.", listOf("--disorder", "1")),
+        DpiStrategy("byedpi-balanced", "ByeDPI Balanced", "Disorder с резервным TLS Record после блокировки.", listOf("--disorder", "1", "--auto=torst", "--timeout", "3", "--tlsrec", "1+s")),
         DpiStrategy("tls-record-sni", "TLS Record / SNI", "Деление ClientHello внутри SNI.", listOf("--tlsrec", "3+s")),
         DpiStrategy("split-sni-1", "Split SNI · 1", "Мягкое разбиение TLS-запроса.", listOf("--split", "1+s")),
         DpiStrategy("split-sni-3", "Split SNI · 3", "Более поздняя граница разбиения SNI.", listOf("--split", "3+s")),
-        DpiStrategy("disorder-sni", "Disorder SNI", "Изменённый порядок частей ClientHello.", listOf("--disorder", "1+s")),
+        DpiStrategy("disorder-sni", "Disorder SNI", "Перестановка возле имени сервера.", listOf("--disorder", "1+s")),
         DpiStrategy("split-disorder", "Split + Disorder", "Комбинация разбиения и перестановки.", listOf("--split", "1+s", "--disorder", "3+s")),
         DpiStrategy("auto-tls", "Auto TLS", "Включает TLS-изменение после признака блокировки.", listOf("--auto=torst", "--timeout", "3", "--tlsrec", "3+s")),
+        DpiStrategy("oob-sni", "OOB SNI", "Внеполосный байт внутри SNI.", listOf("--oob", "3+s")),
+        DpiStrategy("disoob-sni", "Disorder + OOB", "Перестановка с внеполосным байтом.", listOf("--disoob", "3+s")),
         DpiStrategy("tls-record-7", "TLS Record · 7", "Альтернативная позиция TLS-record split.", listOf("--tlsrec", "7+s")),
         DpiStrategy("plain-socks", "Контрольный SOCKS", "Без модификации пакетов: отличает DPI-блокировку от общей сетевой ошибки.", listOf("--debug", "0"))
     )

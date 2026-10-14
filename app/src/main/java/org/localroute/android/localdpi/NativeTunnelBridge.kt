@@ -6,7 +6,11 @@ import io.github.dovecoteescapee.byedpi.core.ByeDpiProxy
 import io.github.dovecoteescapee.byedpi.core.TProxyService
 import org.localroute.android.core.DpiStrategy
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
 
 /** Local-only chain: TUN fd -> hev-socks5-tunnel -> 127.0.0.1 ByeDPI SOCKS5. */
 interface NativeTunnelBridge {
@@ -17,6 +21,7 @@ interface NativeTunnelBridge {
 class AndroidNativeTunnelBridge(private val context: Context) : NativeTunnelBridge {
     private val executor = Executors.newSingleThreadExecutor()
     private var proxy: ByeDpiProxy? = null
+    private var proxyTask: Future<*>? = null
     private var config: File? = null
 
     override fun start(tun: ParcelFileDescriptor, strategy: DpiStrategy): Result<Unit> = runCatching {
@@ -27,19 +32,21 @@ class AndroidNativeTunnelBridge(private val context: Context) : NativeTunnelBrid
         // IPv4 is deliberate: Android emulators and many mobile networks expose
         // unusable IPv6 answers first, which otherwise leaves SOCKS CONNECT hanging.
         val args = arrayOf("ciadpi", "--ip", "127.0.0.1", "--port", "1080", "--no-ipv6", *strategy.nativeArguments.toTypedArray())
-        check(localProxy.open(args) >= 0) { "ByeDPI не открыл локальный SOCKS5-порт" }
         proxy = localProxy
-        executor.execute { localProxy.run() }
+        proxyTask = executor.submit { localProxy.run(args) }
+        check(awaitSocksReady()) { "ByeDPI не открыл локальный SOCKS5-порт" }
         config = File.createTempFile("local-route-tun2socks-", ".yml", context.cacheDir).apply {
-            writeText("""tunnel:
-              mtu: 1500
-              ipv4: 10.7.0.2
+            // Keep this transport block aligned with ByeDPIAndroid. In particular,
+            // the larger SOCKS MTU and native task stack are required for TLS
+            // ClientHello packets on real devices; the previous 1500-byte override
+            // could leave the VPN connected while the TLS stream stalled.
+            writeText("""misc:
+              task-stack-size: 81920
             socks5:
+              mtu: 8500
               address: 127.0.0.1
               port: 1080
               udp: udp
-            misc:
-              log-level: warn
             """.trimIndent())
         }
         TProxyService.TProxyStartService(config!!.absolutePath, tun.fd)
@@ -48,7 +55,29 @@ class AndroidNativeTunnelBridge(private val context: Context) : NativeTunnelBrid
     override fun stop() {
         runCatching { TProxyService.TProxyStopService() }
         runCatching { proxy?.close() }
+        runCatching { proxyTask?.get(2, TimeUnit.SECONDS) }
+        proxyTask = null
         proxy = null
         config?.delete(); config = null
+    }
+
+    private fun awaitSocksReady(): Boolean {
+        // Native startup is asynchronous. Allow roughly ten seconds on slower
+        // phones, but return immediately after a complete SOCKS5 handshake.
+        Thread.sleep(100)
+        repeat(100) {
+            if (proxyTask?.isDone == true) return false
+            val probe = runCatching {
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress("127.0.0.1", 1080), 250)
+                    socket.soTimeout = 250
+                    socket.getOutputStream().write(byteArrayOf(5, 1, 0))
+                    socket.getInputStream().let { it.read() == 5 && it.read() == 0 }
+                }
+            }
+            if (probe.getOrDefault(false)) return true
+            Thread.sleep(75)
+        }
+        return false
     }
 }

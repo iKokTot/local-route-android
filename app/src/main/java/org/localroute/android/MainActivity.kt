@@ -30,13 +30,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Science
@@ -75,6 +75,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -207,7 +209,12 @@ private fun LocalRouteApp(
     onAddTile: () -> Unit
 ) {
     var tab by remember { mutableStateOf(0) }
-    var selected by remember { mutableStateOf(store.selectedServices()) }
+    var selected by remember {
+        val stored = store.selectedServices()
+        val available = stored.filter(isInstalled).toSet()
+        if (available != stored) store.saveSelectedServices(available)
+        mutableStateOf(available)
+    }
     var lastSuccessful by remember { mutableStateOf(store.lastSuccessfulStrategy()) }
     var autostart by remember { mutableStateOf(store.autostartRequested()) }
     val engine by LocalDpiRuntime.state.collectAsState()
@@ -270,6 +277,12 @@ private fun LocalRouteApp(
 @Composable
 private fun ScreenHeader(kicker: String, title: String, state: String, active: Boolean) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Image(
+            painter = painterResource(R.drawable.local_route_mark),
+            contentDescription = "Local Route",
+            modifier = Modifier.size(42.dp)
+        )
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(kicker.uppercase(), color = Mint, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
             Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -366,8 +379,7 @@ private fun ControlScreen(
 
         QuickTileCard(onAddTile)
         AutostartCard(autostart, onAutostartChange)
-        InfoCard(Icons.Rounded.Info, "Без ложных обещаний", "Это локальный DPI-режим: внешний сервер не используется, IP не скрывается. В сети с белым списком сайтов понадобится будущий режим SECURE_TUNNEL.")
-        Text("Telegram · скоро", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
+        ProjectLinks()
     }
 }
 
@@ -411,6 +423,7 @@ private fun DiagnosticsScreen(
         statusText = if (quick) "Быстрая проверка ${strategy.title}" else "Подробная проверка ${strategy.title}"
         val result = ConnectivityProbe.throughLocalSocks(selected, if (quick) 4000 else 9000)
         details = result.lines
+        result.lines.forEach { LocalDpiRuntime.log("${strategy.title}: $it") }
         statuses[strategy.id] = if (result.successful) RunState.SUCCESS else RunState.FAILED
         return result.successful
     }
@@ -542,17 +555,25 @@ private fun SelectCard(title: String, subtitle: String, selected: Boolean, enabl
 }
 
 @Composable
-private fun InfoCard(icon: ImageVector, title: String, text: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = Panel), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
-            Icon(icon, null, tint = Mint, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(title, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text(text, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
-            }
-        }
+private fun ProjectLinks() {
+    val uri = LocalUriHandler.current
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Text(
+            "Telegram",
+            color = Mint,
+            fontSize = 12.sp,
+            modifier = Modifier.clickable { uri.openUri("https://t.me/TheLocalRoute") }.padding(8.dp)
+        )
+        Text("·", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+        Text(
+            "GitHub",
+            color = Mint,
+            fontSize = 12.sp,
+            modifier = Modifier.clickable { uri.openUri("https://github.com/iKokTot/local-route") }.padding(8.dp)
+        )
     }
 }
 
