@@ -1,6 +1,9 @@
 .gradle/
 build/
 app/build/
+app/.cxx/
+app/src/main/jniLibs/
+outputs/
 local.properties
 *.iml
 work/

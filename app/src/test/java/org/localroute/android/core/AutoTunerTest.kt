@@ -13,10 +13,10 @@ class AutoTunerTest {
         val calls = mutableListOf<String>(); var saved: String? = null
         val probe = object : StrategyProbe {
             override suspend fun quick(strategy: DpiStrategy, services: Set<ServiceTarget>) = DiagnosticResult.Success("ok").also { calls += "quick:${strategy.id}" }
-            override suspend fun detailed(strategy: DpiStrategy, services: Set<ServiceTarget>) = if (strategy.id == "split-sni") DiagnosticResult.Success("ok") else DiagnosticResult.Failed("no")
+            override suspend fun detailed(strategy: DpiStrategy, services: Set<ServiceTarget>) = if (strategy.id == "split-sni-1") DiagnosticResult.Success("ok") else DiagnosticResult.Failed("no")
         }
         val result = AutoTuner(probe) { saved = it }.select(null, setOf(ServiceTarget.YOUTUBE))
-        assertEquals("split-sni", result.strategy?.id); assertEquals("split-sni", saved); assertTrue(calls.first().startsWith("quick:"))
+        assertEquals("split-sni-1", result.strategy?.id); assertEquals("split-sni-1", saved); assertTrue(calls.first().startsWith("quick:"))
     }
     @Test fun `failed candidates produce restricted network result`() = runBlocking {
         val probe = object : StrategyProbe {

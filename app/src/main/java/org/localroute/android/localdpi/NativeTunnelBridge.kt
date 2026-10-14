@@ -22,12 +22,19 @@ class AndroidNativeTunnelBridge(private val context: Context) : NativeTunnelBrid
     override fun start(tun: ParcelFileDescriptor, strategy: DpiStrategy): Result<Unit> = runCatching {
         check(proxy == null) { "Локальный движок уже запущен" }
         val localProxy = ByeDpiProxy()
-        val args = arrayOf("--ip", "127.0.0.1", "--port", "1080", *strategy.nativeArguments.toTypedArray())
+        // getopt_long treats element zero as the executable name. Without this
+        // placeholder the first real option (--ip) is silently skipped.
+        // IPv4 is deliberate: Android emulators and many mobile networks expose
+        // unusable IPv6 answers first, which otherwise leaves SOCKS CONNECT hanging.
+        val args = arrayOf("ciadpi", "--ip", "127.0.0.1", "--port", "1080", "--no-ipv6", *strategy.nativeArguments.toTypedArray())
         check(localProxy.open(args) >= 0) { "ByeDPI не открыл локальный SOCKS5-порт" }
         proxy = localProxy
         executor.execute { localProxy.run() }
         config = File.createTempFile("local-route-tun2socks-", ".yml", context.cacheDir).apply {
-            writeText("""socks5:
+            writeText("""tunnel:
+              mtu: 1500
+              ipv4: 10.7.0.2
+            socks5:
               address: 127.0.0.1
               port: 1080
               udp: udp

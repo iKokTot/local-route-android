@@ -24,9 +24,14 @@ data class DpiStrategy(
 object AndroidStrategies {
     // Parameters are intentionally Android/local-SOCKS oriented, not WinDivert presets.
     val all = listOf(
-        DpiStrategy("tls-record-sni", "TLS record + SNI", "Делит ClientHello возле SNI.", listOf("--tlsrec", "3+s")),
-        DpiStrategy("split-sni", "Разбиение SNI", "Делит TLS-запрос рядом с именем сервера.", listOf("--split", "1+s")),
-        DpiStrategy("auto-tls", "Осторожный авто-TLS", "Применяет изменение после короткого признака блокировки.", listOf("--auto=torst", "--timeout", "3", "--tlsrec", "3+s"))
+        DpiStrategy("tls-record-sni", "TLS Record / SNI", "Деление ClientHello внутри SNI.", listOf("--tlsrec", "3+s")),
+        DpiStrategy("split-sni-1", "Split SNI · 1", "Мягкое разбиение TLS-запроса.", listOf("--split", "1+s")),
+        DpiStrategy("split-sni-3", "Split SNI · 3", "Более поздняя граница разбиения SNI.", listOf("--split", "3+s")),
+        DpiStrategy("disorder-sni", "Disorder SNI", "Изменённый порядок частей ClientHello.", listOf("--disorder", "1+s")),
+        DpiStrategy("split-disorder", "Split + Disorder", "Комбинация разбиения и перестановки.", listOf("--split", "1+s", "--disorder", "3+s")),
+        DpiStrategy("auto-tls", "Auto TLS", "Включает TLS-изменение после признака блокировки.", listOf("--auto=torst", "--timeout", "3", "--tlsrec", "3+s")),
+        DpiStrategy("tls-record-7", "TLS Record · 7", "Альтернативная позиция TLS-record split.", listOf("--tlsrec", "7+s")),
+        DpiStrategy("plain-socks", "Контрольный SOCKS", "Без модификации пакетов: отличает DPI-блокировку от общей сетевой ошибки.", listOf("--debug", "0"))
     )
 
     fun ordered(lastSuccessfulId: String?): List<DpiStrategy> =
