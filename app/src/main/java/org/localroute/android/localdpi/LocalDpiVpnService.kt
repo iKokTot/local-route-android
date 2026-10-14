@@ -24,9 +24,12 @@ class LocalDpiVpnService : VpnService() {
         val builder = Builder().setSession("Local Route: локальный DPI").addAddress("10.7.0.2", 32).addRoute("0.0.0.0", 0)
         val packages = intent?.getStringArrayExtra("packages") ?: emptyArray()
         if (packages.isEmpty()) { stopLocal(); return Service.START_NOT_STICKY }
-        try { packages.forEach { builder.addAllowedApplication(it) } } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
-            stopLocal(); return Service.START_NOT_STICKY
+        var allowed = 0
+        packages.forEach { packageName ->
+            try { builder.addAllowedApplication(packageName); allowed++ }
+            catch (_: android.content.pm.PackageManager.NameNotFoundException) { /* Not installed: keep other chosen apps working. */ }
         }
+        if (allowed == 0) { stopLocal(); return Service.START_NOT_STICKY }
         val tun = builder.establish()
         if (tun == null) { stopLocal(); return Service.START_NOT_STICKY }
         val result = engine.start(tun, AndroidStrategies.all.first())
