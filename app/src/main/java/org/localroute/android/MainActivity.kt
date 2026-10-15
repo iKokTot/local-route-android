@@ -12,6 +12,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -77,11 +78,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -94,6 +97,10 @@ import org.localroute.android.localdpi.EnginePhase
 import org.localroute.android.localdpi.LocalDpiRuntime
 import org.localroute.android.localdpi.LocalDpiVpnService
 import org.localroute.android.localdpi.LocalRouteTileService
+import org.localroute.android.tunnel.SecureTunnelRuntime
+import org.localroute.android.tunnel.SecureTunnelStore
+import org.localroute.android.tunnel.TunnelState
+import org.localroute.android.tunnel.WireGuardSecureTunnelController
 
 private val Night = Color(0xFF0E1720)
 private val Panel = Color(0xFF182630)
@@ -109,6 +116,9 @@ class MainActivity : ComponentActivity() {
     companion object { const val EXTRA_START_FROM_TILE = "start_from_tile" }
 
     private var strategyToStart: DpiStrategy? = null
+    private var secureTunnelStartRequested = false
+    private lateinit var secureTunnelStore: SecureTunnelStore
+    private lateinit var secureTunnelController: WireGuardSecureTunnelController
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         continueVpnRequest()
     }
@@ -120,6 +130,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = ProfileStore(this)
+        secureTunnelStore = SecureTunnelStore(this)
+        secureTunnelController = WireGuardSecureTunnelController(this, secureTunnelStore)
         setContent {
             LocalRouteTheme {
                 LocalRouteApp(
@@ -128,7 +140,10 @@ class MainActivity : ComponentActivity() {
                     onStart = ::requestVpn,
                     onStop = ::stopVpn,
                     onAddTile = ::requestQuickTile,
-                    onOpenService = ::openService
+                    onOpenService = ::openService,
+                    secureTunnelConfiguration = secureTunnelStore.configuration().orEmpty(),
+                    onSaveSecureTunnelConfiguration = ::saveSecureTunnelConfiguration,
+                    onStartSecureTunnel = ::requestSecureTunnel
                 )
             }
         }
@@ -140,6 +155,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestVpn(services: Set<ServiceTarget>, strategy: DpiStrategy) {
+        secureTunnelStartRequested = false
         strategyToStart = strategy
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -154,12 +170,49 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startLocalService() {
+        if (secureTunnelStartRequested) {
+            secureTunnelStartRequested = false
+            startSecureTunnel()
+            return
+        }
         val strategy = strategyToStart ?: AndroidStrategies.all.first()
         ContextCompat.startForegroundService(this, Intent(this, LocalDpiVpnService::class.java)
             .setAction(LocalDpiVpnService.ACTION_START)
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategy.id)
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_TITLE, strategy.title)
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray()))
+    }
+
+    private fun saveSecureTunnelConfiguration(configuration: String) {
+        secureTunnelStore.saveConfiguration(configuration)
+        SecureTunnelRuntime.update(TunnelState.Disconnected, "Конфигурация сохранена на устройстве")
+    }
+
+    private fun requestSecureTunnel() {
+        if (secureTunnelStore.configuration().isNullOrBlank()) {
+            SecureTunnelRuntime.update(TunnelState.ConfigRequired, "Сначала вставьте конфигурацию WireGuard")
+            return
+        }
+        secureTunnelStartRequested = true
+        startService(Intent(this, LocalDpiVpnService::class.java).setAction(LocalDpiVpnService.ACTION_STOP))
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            continueVpnRequest()
+        }
+    }
+
+    private fun startSecureTunnel() {
+        lifecycleScope.launch {
+            SecureTunnelRuntime.update(TunnelState.Connecting, "Подключение к вашему серверу…")
+            when (val result = secureTunnelController.connect(org.localroute.android.core.RouteProfile(mode = org.localroute.android.core.TrafficMode.SECURE_TUNNEL))) {
+                TunnelState.Connected -> SecureTunnelRuntime.update(result, "Защищённый туннель активен")
+                is TunnelState.InvalidConfig -> SecureTunnelRuntime.update(result, result.message)
+                is TunnelState.Error -> SecureTunnelRuntime.update(result, result.message)
+                TunnelState.ConfigRequired -> SecureTunnelRuntime.update(result, "Сначала вставьте конфигурацию WireGuard")
+                else -> SecureTunnelRuntime.update(result, "Состояние туннеля изменено")
+            }
+        }
     }
 
     private fun openService(target: ServiceTarget) {
@@ -170,6 +223,10 @@ class MainActivity : ComponentActivity() {
 
     private fun stopVpn() {
         startService(Intent(this, LocalDpiVpnService::class.java).setAction(LocalDpiVpnService.ACTION_STOP))
+        lifecycleScope.launch {
+            secureTunnelController.disconnect()
+            SecureTunnelRuntime.update(TunnelState.Disconnected, "Защита остановлена")
+        }
     }
 
     private fun requestQuickTile() {
@@ -217,7 +274,10 @@ private fun LocalRouteApp(
     onStart: (Set<ServiceTarget>, DpiStrategy) -> Unit,
     onStop: () -> Unit,
     onAddTile: () -> Unit,
-    onOpenService: (ServiceTarget) -> Unit
+    onOpenService: (ServiceTarget) -> Unit,
+    secureTunnelConfiguration: String,
+    onSaveSecureTunnelConfiguration: (String) -> Unit,
+    onStartSecureTunnel: () -> Unit
 ) {
     var tab by remember { mutableStateOf(0) }
     var selected by remember {
@@ -234,7 +294,7 @@ private fun LocalRouteApp(
         containerColor = Night,
         bottomBar = {
             NavigationBar(containerColor = Panel, tonalElevation = 0.dp) {
-                val destinations = listOf("Управление" to Icons.Rounded.Dashboard, "Проверка" to Icons.Rounded.Science)
+                val destinations = listOf("Управление" to Icons.Rounded.Dashboard, "Проверка" to Icons.Rounded.Science, "Туннель" to Icons.Rounded.Security)
                 destinations.forEachIndexed { index, item ->
                     NavigationBarItem(
                         selected = tab == index,
@@ -268,15 +328,93 @@ private fun LocalRouteApp(
                     onOpenDiagnostics = { tab = 1 },
                     onAddTile = onAddTile
                 )
-            } else {
+            } else if (tab == 1) {
                 DiagnosticsScreen(
                     selected = selected,
                     onStart = onStart,
                     onStop = onStop,
                     onOpenService = onOpenService
                 )
+            } else {
+                SecureTunnelScreen(
+                    initialConfiguration = secureTunnelConfiguration,
+                    onSaveConfiguration = onSaveSecureTunnelConfiguration,
+                    onStart = onStartSecureTunnel,
+                    onStop = onStop
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun SecureTunnelScreen(
+    initialConfiguration: String,
+    onSaveConfiguration: (String) -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit
+) {
+    val context = LocalContext.current
+    var configuration by remember { mutableStateOf(initialConfiguration) }
+    val status by SecureTunnelRuntime.state.collectAsState()
+    val active = status.state == TunnelState.Connected || status.state == TunnelState.Connecting
+    val configPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            }.onSuccess { imported ->
+                if (imported.isNotBlank()) {
+                    configuration = imported
+                    onSaveConfiguration(imported)
+                } else {
+                    SecureTunnelRuntime.update(TunnelState.InvalidConfig("Файл конфигурации пуст"), "Файл конфигурации пуст")
+                }
+            }.onFailure {
+                SecureTunnelRuntime.update(TunnelState.InvalidConfig("Не удалось прочитать выбранный файл"), "Не удалось прочитать выбранный файл")
+            }
+        }
+    }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        ScreenHeader("МОЙ СЕРВЕР", "Защищённый туннель", if (active) "Подключён" else "Не подключён", active)
+        Card(colors = CardDefaults.cardColors(containerColor = if (active) MintDark else Panel), border = BorderStroke(1.dp, if (active) Mint.copy(alpha = .45f) else Line), shape = RoundedCornerShape(20.dp)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                IconBadge(Icons.Rounded.Security, if (active) Mint else TextMuted)
+                Text("Личный сервер WireGuard", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                Text(status.message, color = TextMuted, fontSize = 13.sp)
+                Text("Это полноценный зашифрованный туннель. Он не гарантирует доступ из сети с белым списком: сначала нужно проверить, доступен ли адрес вашего сервера.", color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp)
+            }
+        }
+        Text("КОНФИГУРАЦИЯ WG-QUICK", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+        Text("Вставьте личный файл WireGuard: [Interface] и [Peer]. Он шифруется Android Keystore и остаётся только на этом телефоне.", color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp)
+        OutlinedButton(
+            onClick = { configPicker.launch(arrayOf("text/plain", "application/octet-stream")) },
+            modifier = Modifier.fillMaxWidth().height(50.dp), border = BorderStroke(1.dp, Line),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Mint), shape = RoundedCornerShape(14.dp)
+        ) { Icon(Icons.Rounded.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Выбрать файл .conf", fontWeight = FontWeight.Bold) }
+        OutlinedTextField(
+            value = configuration,
+            onValueChange = { configuration = it },
+            modifier = Modifier.fillMaxWidth().height(210.dp),
+            label = { Text("Конфигурация WireGuard") },
+            placeholder = { Text("[Interface]\nPrivateKey = …\n\n[Peer]\nPublicKey = …\nEndpoint = …") },
+            minLines = 8
+        )
+        OutlinedButton(
+            onClick = { onSaveConfiguration(configuration) },
+            enabled = configuration.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp),
+            border = BorderStroke(1.dp, Mint.copy(alpha = .7f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Mint), shape = RoundedCornerShape(14.dp)
+        ) { Icon(Icons.Rounded.CheckCircle, null); Spacer(Modifier.width(8.dp)); Text("Сохранить на устройстве", fontWeight = FontWeight.Bold) }
+        Button(
+            onClick = { onSaveConfiguration(configuration); onStart() },
+            enabled = configuration.isNotBlank() && !active, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)
+        ) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Подключить мой сервер", fontWeight = FontWeight.Bold) }
+        OutlinedButton(
+            onClick = onStop, enabled = active, modifier = Modifier.fillMaxWidth().height(54.dp),
+            border = BorderStroke(1.dp, if (active) Coral else Line), colors = ButtonDefaults.outlinedButtonColors(contentColor = if (active) Coral else TextMuted), shape = RoundedCornerShape(14.dp)
+        ) { Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(8.dp)); Text("Отключить туннель", fontWeight = FontWeight.Bold) }
     }
 }
 

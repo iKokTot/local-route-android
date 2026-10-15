@@ -20,5 +20,10 @@
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true"/>
         </service>
+        <service android:name="com.wireguard.android.backend.GoBackend$VpnService" android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE" android:foregroundServiceType="specialUse">
+            <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Защищённый туннель к собственному серверу пользователя"/>
+        </service>
     </application>
 </manifest>

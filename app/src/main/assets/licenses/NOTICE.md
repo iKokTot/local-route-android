@@ -40,6 +40,15 @@ are packaged as `hev-socks5-tunnel-MIT.txt`, `hev-task-system-MIT.txt`,
 `yaml-MIT.txt` and `lwIP-BSD.txt`. ByeDPI's MIT text is packaged as
 `ByeDPI-MIT.txt`.
 
+## Secure Tunnel dependency
+
+* **WireGuard Android tunnel** — Apache-2.0, copyright WireGuard LLC.
+  Source: https://github.com/WireGuard/wireguard-android
+  Published artifact: `com.wireguard.android:tunnel:1.0.20260102`.
+  Used only for the optional non-root `SECURE_TUNNEL` mode. It provides the
+  audited WireGuard Android userspace backend; Local Route does not implement
+  WireGuard cryptography or the protocol itself.
+
 ## Java/Kotlin dependencies
 
 AndroidX and Jetpack Compose are consumed as normal Android libraries. Their

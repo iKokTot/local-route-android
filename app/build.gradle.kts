@@ -12,8 +12,12 @@ android {
     compileSdk = 35
     // Match the toolchain used by the proven ByeDPIAndroid 1.2 build.
     ndkVersion = "25.1.8937393"
-    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 11; versionName = "0.11.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
-    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 12; versionName = "0.12.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
+    }
     buildFeatures { compose = true; buildConfig = true }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     packaging { resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") }
@@ -51,6 +55,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.compose.material:material-icons-extended")
+    // Official non-root WireGuard backend used only by SECURE_TUNNEL.
+    implementation("com.wireguard.android:tunnel:1.0.20260102")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
