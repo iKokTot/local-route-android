@@ -99,6 +99,8 @@ import org.localroute.android.localdpi.LocalDpiVpnService
 import org.localroute.android.localdpi.LocalRouteTileService
 import org.localroute.android.tunnel.SecureTunnelRuntime
 import org.localroute.android.tunnel.SecureTunnelStore
+import org.localroute.android.tunnel.TunnelServerProfile
+import org.localroute.android.tunnel.TunnelServerProfiles
 import org.localroute.android.tunnel.TunnelState
 import org.localroute.android.tunnel.WireGuardSecureTunnelController
 
@@ -141,8 +143,9 @@ class MainActivity : ComponentActivity() {
                     onStop = ::stopVpn,
                     onAddTile = ::requestQuickTile,
                     onOpenService = ::openService,
+                    secureTunnelProfileName = secureTunnelStore.activeProfile()?.name.orEmpty(),
                     secureTunnelConfiguration = secureTunnelStore.configuration().orEmpty(),
-                    onSaveSecureTunnelConfiguration = ::saveSecureTunnelConfiguration,
+                    onSaveSecureTunnelProfile = ::saveSecureTunnelProfile,
                     onStartSecureTunnel = ::requestSecureTunnel
                 )
             }
@@ -183,9 +186,13 @@ class MainActivity : ComponentActivity() {
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray()))
     }
 
-    private fun saveSecureTunnelConfiguration(configuration: String) {
-        secureTunnelStore.saveConfiguration(configuration)
-        SecureTunnelRuntime.update(TunnelState.Disconnected, "Конфигурация сохранена на устройстве")
+    private fun saveSecureTunnelProfile(name: String, configuration: String) {
+        val current = secureTunnelStore.activeProfile() ?: TunnelServerProfiles.default()
+        secureTunnelStore.saveProfile(
+            TunnelServerProfile(current.id, name.trim().ifBlank { current.name }),
+            configuration
+        )
+        SecureTunnelRuntime.update(TunnelState.Disconnected, "Профиль сервера сохранён на устройстве")
     }
 
     private fun requestSecureTunnel() {
@@ -275,8 +282,9 @@ private fun LocalRouteApp(
     onStop: () -> Unit,
     onAddTile: () -> Unit,
     onOpenService: (ServiceTarget) -> Unit,
+    secureTunnelProfileName: String,
     secureTunnelConfiguration: String,
-    onSaveSecureTunnelConfiguration: (String) -> Unit,
+    onSaveSecureTunnelProfile: (String, String) -> Unit,
     onStartSecureTunnel: () -> Unit
 ) {
     var tab by remember { mutableStateOf(0) }
@@ -337,8 +345,9 @@ private fun LocalRouteApp(
                 )
             } else {
                 SecureTunnelScreen(
+                    initialProfileName = secureTunnelProfileName,
                     initialConfiguration = secureTunnelConfiguration,
-                    onSaveConfiguration = onSaveSecureTunnelConfiguration,
+                    onSaveProfile = onSaveSecureTunnelProfile,
                     onStart = onStartSecureTunnel,
                     onStop = onStop
                 )
@@ -349,12 +358,14 @@ private fun LocalRouteApp(
 
 @Composable
 private fun SecureTunnelScreen(
+    initialProfileName: String,
     initialConfiguration: String,
-    onSaveConfiguration: (String) -> Unit,
+    onSaveProfile: (String, String) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit
 ) {
     val context = LocalContext.current
+    var profileName by remember { mutableStateOf(initialProfileName.ifBlank { "Мой сервер" }) }
     var configuration by remember { mutableStateOf(initialConfiguration) }
     val status by SecureTunnelRuntime.state.collectAsState()
     val active = status.state == TunnelState.Connected || status.state == TunnelState.Connecting
@@ -365,7 +376,7 @@ private fun SecureTunnelScreen(
             }.onSuccess { imported ->
                 if (imported.isNotBlank()) {
                     configuration = imported
-                    onSaveConfiguration(imported)
+                    onSaveProfile(profileName, imported)
                 } else {
                     SecureTunnelRuntime.update(TunnelState.InvalidConfig("Файл конфигурации пуст"), "Файл конфигурации пуст")
                 }
@@ -387,6 +398,16 @@ private fun SecureTunnelScreen(
                 Text("Это полноценный зашифрованный туннель. Он не гарантирует доступ из сети с белым списком: сначала нужно проверить, доступен ли адрес вашего сервера.", color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp)
             }
         }
+        Text("ПРОФИЛЬ СЕРВЕРА", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+        Text("Имя нужно только на этом телефоне. Завтра сюда можно будет добавить другие личные серверы, не смешивая их ключи и конфигурации.", color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp)
+        OutlinedTextField(
+            value = profileName,
+            onValueChange = { profileName = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Название подключения") },
+            placeholder = { Text("Например, Мой сервер") }
+        )
         Text("КОНФИГУРАЦИЯ WG-QUICK", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
         Text("Вставьте личный файл WireGuard: [Interface] и [Peer]. Он шифруется Android Keystore и остаётся только на этом телефоне.", color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp)
         OutlinedButton(
@@ -403,12 +424,12 @@ private fun SecureTunnelScreen(
             minLines = 8
         )
         OutlinedButton(
-            onClick = { onSaveConfiguration(configuration) },
+            onClick = { onSaveProfile(profileName, configuration) },
             enabled = configuration.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp),
             border = BorderStroke(1.dp, Mint.copy(alpha = .7f)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Mint), shape = RoundedCornerShape(14.dp)
         ) { Icon(Icons.Rounded.CheckCircle, null); Spacer(Modifier.width(8.dp)); Text("Сохранить на устройстве", fontWeight = FontWeight.Bold) }
         Button(
-            onClick = { onSaveConfiguration(configuration); onStart() },
+            onClick = { onSaveProfile(profileName, configuration); onStart() },
             enabled = configuration.isNotBlank() && !active, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)
         ) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Подключить мой сервер", fontWeight = FontWeight.Bold) }
         OutlinedButton(
