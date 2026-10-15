@@ -77,10 +77,19 @@ class LocalDpiVpnService : VpnService() {
             .setSession("Local Route · ${strategy.title}")
             .addAddress("10.10.10.10", 32)
             .addRoute("0.0.0.0", 0)
-
-        // Match ByeDPIAndroid's default: do not force a public resolver.
-        // Android keeps using the network-provided DNS when no VPN DNS is set.
-        // This avoids breaking networks where 1.1.1.1 is blocked or intercepted.
+            // ByeDPIAndroid's VPN profile uses 1.1.1.1 by default. Supplying a
+            // VPN DNS server is important: otherwise real apps may keep using
+            // an underlying-network resolver that Android no longer exposes
+            // after the default route moves into this VPN.
+            .addDnsServer("1.1.1.1")
+            .setConfigureIntent(
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, MainActivity::class.java),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            )
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             builder.setMetered(false)

@@ -6,11 +6,8 @@ import io.github.dovecoteescapee.byedpi.core.ByeDpiProxy
 import io.github.dovecoteescapee.byedpi.core.TProxyService
 import org.localroute.android.core.DpiStrategy
 import java.io.File
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
-import java.util.concurrent.TimeUnit
 
 /** Local-only chain: TUN fd -> hev-socks5-tunnel -> 127.0.0.1 ByeDPI SOCKS5. */
 interface NativeTunnelBridge {
@@ -29,15 +26,15 @@ class AndroidNativeTunnelBridge(private val context: Context) : NativeTunnelBrid
     override fun startProxy(strategy: DpiStrategy): Result<Unit> = runCatching {
         check(proxy == null) { "Локальный движок уже запущен" }
         val localProxy = ByeDpiProxy()
-        // Keep command construction identical to ByeDPIAndroid v1.2.0. The
-        // bundled ByeDPI 13 parser receives argv[0] and owns the local listener.
-        val args = arrayOf("--ip", "127.0.0.1", "--port", "1080", "--no-ipv6", *strategy.nativeArguments.toTypedArray())
-        val fd = localProxy.create(args)
+        // ByeDPIAndroid passes the user's command line verbatim (apart from
+        // argv[0]). ByeDPI already defaults to 127.0.0.1:1080. Injecting
+        // --no-ipv6 here changed the strategy and broke mobile networks where
+        // the same pasted line works in the reference application.
+        val fd = localProxy.create(strategy.nativeArguments.toTypedArray())
         check(fd >= 0) { "ByeDPI не принял параметры стратегии" }
         proxy = localProxy
         proxyFd = fd
         proxyTask = executor.submit { localProxy.run(fd) }
-        check(awaitSocksReady()) { "ByeDPI не открыл локальный SOCKS5-порт" }
     }.onFailure { stop() }
 
     override fun startTunnel(tun: ParcelFileDescriptor): Result<Unit> = runCatching {
@@ -62,30 +59,13 @@ class AndroidNativeTunnelBridge(private val context: Context) : NativeTunnelBrid
     override fun stop() {
         runCatching { TProxyService.TProxyStopService() }
         runCatching { proxy?.close(proxyFd) }
-        runCatching { proxyTask?.get(2, TimeUnit.SECONDS) }
+        // The reference client joins the native event loop before allowing a
+        // new strategy to start. A timed join could leave the old global
+        // ByeDPI state alive while parse_args configured the next strategy.
+        runCatching { proxyTask?.get() }
         proxyTask = null
         proxy = null
         proxyFd = -1
         config?.delete(); config = null
-    }
-
-    private fun awaitSocksReady(): Boolean {
-        // Native startup is asynchronous. Allow roughly ten seconds on slower
-        // phones, but return immediately after a complete SOCKS5 handshake.
-        Thread.sleep(100)
-        repeat(100) {
-            if (proxyTask?.isDone == true) return false
-            val probe = runCatching {
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress("127.0.0.1", 1080), 250)
-                    socket.soTimeout = 250
-                    socket.getOutputStream().write(byteArrayOf(5, 1, 0))
-                    socket.getInputStream().let { it.read() == 5 && it.read() == 0 }
-                }
-            }
-            if (probe.getOrDefault(false)) return true
-            Thread.sleep(75)
-        }
-        return false
     }
 }
