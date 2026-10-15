@@ -2,23 +2,9 @@ package org.localroute.android.core
 
 enum class TrafficMode { LOCAL_DPI, SECURE_TUNNEL }
 
-enum class ServiceTarget(
-    val title: String,
-    val packageName: String,
-    val supportingPackages: Set<String> = emptySet()
-) {
-    // The Android YouTube client delegates parts of discovery, account and
-    // Cronet setup to Google Play services. Routing only the visible YouTube
-    // package can leave the real app spinning even though a direct HTTPS
-    // probe succeeds.
-    YOUTUBE(
-        "YouTube",
-        "com.google.android.youtube",
-        setOf("com.google.android.gms", "com.google.android.gsf")
-    ),
+enum class ServiceTarget(val title: String, val packageName: String) {
+    YOUTUBE("YouTube", "com.google.android.youtube"),
     DISCORD("Discord", "com.discord");
-
-    val vpnPackages: Set<String> get() = setOf(packageName) + supportingPackages
 }
 
 data class RouteProfile(
@@ -51,9 +37,9 @@ object AndroidStrategies {
         ),
         DpiStrategy(
             "byedpi-17-default",
-            "ByeDPI 17 · Default",
-            "Актуальный профиль OOB + UDP fake + TLS Record.",
-            listOf("-o1", "-a1", "-r-5+se")
+            "ByeDPI · Default",
+            "Базовый профиль OOB + UDP fake + TLS Record.",
+            listOf("-o1", "-a1", "-r-5+s")
         ),
         DpiStrategy(
             "android-multipoint",

@@ -21,7 +21,6 @@ class LocalDpiVpnService : VpnService() {
         const val EXTRA_STRATEGY = "strategy"
         const val EXTRA_STRATEGY_TITLE = "strategy_title"
         const val EXTRA_STRATEGY_ARGUMENTS = "strategy_arguments"
-        const val EXTRA_PACKAGES = "packages"
         private const val CHANNEL = "local_route_vpn"
     }
 
@@ -51,11 +50,9 @@ class LocalDpiVpnService : VpnService() {
         } else {
             AndroidStrategies.all.firstOrNull { it.id == strategyId } ?: AndroidStrategies.all.first()
         }
-        val packages = intent?.getStringArrayExtra(EXTRA_PACKAGES) ?: emptyArray()
-
         LocalDpiRuntime.update(EnginePhase.STARTING, "Запуск ${strategy.title}…", strategy.id)
         startForeground(7, notification(strategy.title))
-        worker.execute { startLocal(strategy, packages) }
+        worker.execute { startLocal(strategy) }
         return START_STICKY
     }
 
@@ -64,11 +61,15 @@ class LocalDpiVpnService : VpnService() {
      * run in Android's main thread. Besides keeping the service responsive,
      * this avoids NetworkOnMainThreadException during the readiness handshake.
      */
-    private fun startLocal(strategy: DpiStrategy, packages: Array<String>) {
+    private fun startLocal(strategy: DpiStrategy) {
         resetEngine()
 
-        if (packages.isEmpty()) {
-            fail("Не выбран ни один сервис")
+        // ByeDPIAndroid starts its loopback SOCKS listener before establishing
+        // the device-wide VPN. Preserve that order so the proxy's own sockets
+        // are bound to the underlying network rather than the new TUN.
+        val proxyResult = engine.startProxy(strategy)
+        if (proxyResult.isFailure) {
+            fail(proxyResult.exceptionOrNull()?.message ?: "Не удалось запустить ByeDPI")
             return
         }
 
@@ -85,19 +86,10 @@ class LocalDpiVpnService : VpnService() {
             builder.setMetered(false)
         }
 
-        var allowed = 0
-        packages.forEach { packageName ->
-            try {
-                builder.addAllowedApplication(packageName)
-                allowed++
-            } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
-                // A selected app may simply not be installed. Other selected apps still work.
-            }
-        }
-        if (allowed == 0) {
-            fail("YouTube или Discord не установлены на устройстве")
-            return
-        }
+        // ByeDPIAndroid's reliable VPN mode is device-wide. Excluding this app
+        // prevents the local SOCKS server's own outbound sockets from looping
+        // back into the TUN interface.
+        builder.addDisallowedApplication(applicationContext.packageName)
 
         val descriptor = builder.establish()
         if (descriptor == null) {
@@ -105,7 +97,7 @@ class LocalDpiVpnService : VpnService() {
             return
         }
         tun = descriptor
-        val result = engine.start(descriptor, strategy)
+        val result = engine.startTunnel(descriptor)
         if (result.isSuccess) {
             LocalDpiRuntime.update(EnginePhase.ACTIVE, "Активна: ${strategy.title}", strategy.id)
         } else {

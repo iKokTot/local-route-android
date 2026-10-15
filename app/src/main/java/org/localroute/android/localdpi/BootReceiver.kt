@@ -20,10 +20,6 @@ class BootReceiver : BroadcastReceiver() {
             .setAction(LocalDpiVpnService.ACTION_START)
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategy.id)
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_TITLE, strategy.title)
-            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray())
-            .putExtra(
-                LocalDpiVpnService.EXTRA_PACKAGES,
-                store.selectedServices().flatMap { it.vpnPackages }.distinct().toTypedArray()
-            ))
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray()))
     }
 }

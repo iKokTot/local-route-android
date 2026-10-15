@@ -14,27 +14,34 @@ import java.util.concurrent.TimeUnit
 
 /** Local-only chain: TUN fd -> hev-socks5-tunnel -> 127.0.0.1 ByeDPI SOCKS5. */
 interface NativeTunnelBridge {
-    fun start(tun: ParcelFileDescriptor, strategy: DpiStrategy): Result<Unit>
+    fun startProxy(strategy: DpiStrategy): Result<Unit>
+    fun startTunnel(tun: ParcelFileDescriptor): Result<Unit>
     fun stop()
 }
 
 class AndroidNativeTunnelBridge(private val context: Context) : NativeTunnelBridge {
     private val executor = Executors.newSingleThreadExecutor()
     private var proxy: ByeDpiProxy? = null
+    private var proxyFd: Int = -1
     private var proxyTask: Future<*>? = null
     private var config: File? = null
 
-    override fun start(tun: ParcelFileDescriptor, strategy: DpiStrategy): Result<Unit> = runCatching {
+    override fun startProxy(strategy: DpiStrategy): Result<Unit> = runCatching {
         check(proxy == null) { "Локальный движок уже запущен" }
         val localProxy = ByeDpiProxy()
-        // getopt_long treats element zero as the executable name. Without this
-        // placeholder the first real option (--ip) is silently skipped.
-        // IPv4 is deliberate: Android emulators and many mobile networks expose
-        // unusable IPv6 answers first, which otherwise leaves SOCKS CONNECT hanging.
-        val args = arrayOf("ciadpi", "--ip", "127.0.0.1", "--port", "1080", "--no-ipv6", *strategy.nativeArguments.toTypedArray())
+        // Keep command construction identical to ByeDPIAndroid v1.2.0. The
+        // bundled ByeDPI 13 parser receives argv[0] and owns the local listener.
+        val args = arrayOf("--ip", "127.0.0.1", "--port", "1080", "--no-ipv6", *strategy.nativeArguments.toTypedArray())
+        val fd = localProxy.create(args)
+        check(fd >= 0) { "ByeDPI не принял параметры стратегии" }
         proxy = localProxy
-        proxyTask = executor.submit { localProxy.run(args) }
+        proxyFd = fd
+        proxyTask = executor.submit { localProxy.run(fd) }
         check(awaitSocksReady()) { "ByeDPI не открыл локальный SOCKS5-порт" }
+    }.onFailure { stop() }
+
+    override fun startTunnel(tun: ParcelFileDescriptor): Result<Unit> = runCatching {
+        check(proxy != null && proxyFd >= 0) { "ByeDPI SOCKS5 ещё не запущен" }
         config = File.createTempFile("local-route-tun2socks-", ".yml", context.cacheDir).apply {
             // Keep this transport block aligned with ByeDPIAndroid. In particular,
             // the larger SOCKS MTU and native task stack are required for TLS
@@ -54,10 +61,11 @@ class AndroidNativeTunnelBridge(private val context: Context) : NativeTunnelBrid
 
     override fun stop() {
         runCatching { TProxyService.TProxyStopService() }
-        runCatching { proxy?.close() }
+        runCatching { proxy?.close(proxyFd) }
         runCatching { proxyTask?.get(2, TimeUnit.SECONDS) }
         proxyTask = null
         proxy = null
+        proxyFd = -1
         config?.delete(); config = null
     }
 

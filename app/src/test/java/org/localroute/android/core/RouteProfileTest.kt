@@ -31,8 +31,4 @@ class RouteProfileTest {
         assertEquals("custom-command", AndroidStrategies.custom("--tlsrec 1+s")?.id)
     }
 
-    @Test fun `YouTube route includes its Android support processes`() {
-        assertTrue("com.google.android.youtube" in ServiceTarget.YOUTUBE.vpnPackages)
-        assertTrue("com.google.android.gms" in ServiceTarget.YOUTUBE.vpnPackages)
-    }
 }

@@ -109,7 +109,6 @@ private val Coral = Color(0xFFFF7185)
 class MainActivity : ComponentActivity() {
     companion object { const val EXTRA_START_FROM_TILE = "start_from_tile" }
 
-    private var servicesToStart: Set<ServiceTarget> = emptySet()
     private var strategyToStart: DpiStrategy? = null
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         continueVpnRequest()
@@ -142,7 +141,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestVpn(services: Set<ServiceTarget>, strategy: DpiStrategy) {
-        servicesToStart = services
         strategyToStart = strategy
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -160,10 +158,6 @@ class MainActivity : ComponentActivity() {
         val strategy = strategyToStart ?: AndroidStrategies.all.first()
         ContextCompat.startForegroundService(this, Intent(this, LocalDpiVpnService::class.java)
             .setAction(LocalDpiVpnService.ACTION_START)
-            .putExtra(
-                LocalDpiVpnService.EXTRA_PACKAGES,
-                servicesToStart.flatMap { it.vpnPackages }.distinct().toTypedArray()
-            )
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategy.id)
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_TITLE, strategy.title)
             .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray()))
@@ -367,7 +361,12 @@ private fun ControlScreen(
             }
         }
 
-        SectionTitle("СЕРВИСЫ", "Защищать соединения")
+        SectionTitle("СЕРВИСЫ", "Проверять работу")
+        Text(
+            "Как в ByeDPIAndroid, локальный VPN обрабатывает трафик всего устройства. Выбор ниже определяет приложения и узлы для проверки.",
+            color = TextMuted,
+            fontSize = 13.sp
+        )
         ServiceTarget.entries.forEach { service ->
             val available = installed(service)
             SelectCard(
