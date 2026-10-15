@@ -3,11 +3,12 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android {
     namespace = "org.localroute.android"
     compileSdk = 35
-    ndkVersion = "30.0.16248370"
-    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 7; versionName = "0.7.0-mvp"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    // Match the toolchain used by the proven ByeDPIAndroid 1.2 build.
+    ndkVersion = "25.1.8937393"
+    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 8; versionName = "0.8.0-mvp"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true; buildConfig = true }
-    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "4.1.2" } }
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     packaging { resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") }
 }
 

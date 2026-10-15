@@ -448,16 +448,18 @@ private fun DiagnosticsScreen(
         @Suppress("UNREACHABLE_CODE") false
     } ?: false
 
-    suspend fun check(strategy: DpiStrategy, quick: Boolean): Boolean {
-        statuses[strategy.id] = RunState.RUNNING
-        statusText = "Запускаем ${strategy.title}…"
-        onStart(selected, strategy)
-        if (!waitUntilActive(strategy.id)) {
-            statuses[strategy.id] = RunState.FAILED
-            details = listOf(LocalDpiRuntime.state.value.message)
-            return false
+    suspend fun check(strategy: DpiStrategy, quick: Boolean, startEngine: Boolean = true): Boolean {
+        if (startEngine) {
+            statuses[strategy.id] = RunState.RUNNING
+            statusText = "Запускаем ${strategy.title}…"
+            onStart(selected, strategy)
+            if (!waitUntilActive(strategy.id)) {
+                statuses[strategy.id] = RunState.FAILED
+                details = listOf(LocalDpiRuntime.state.value.message)
+                return false
+            }
+            delay(500)
         }
-        delay(350)
         statusText = if (quick) "Быстрая проверка ${strategy.title}" else "Подробная проверка ${strategy.title}"
         val result = ConnectivityProbe.throughLocalSocks(
             selected,
@@ -479,7 +481,11 @@ private fun DiagnosticsScreen(
             var candidate: DpiStrategy? = null
             for (strategy in candidates) {
                 if (!check(strategy, quick = true)) continue
-                if (check(strategy, quick = false)) {
+                // Keep the same native VPN/SOCKS/TUN session alive. Unlike a
+                // JVM service, hev-socks5-tunnel owns global native state and
+                // cannot be safely stopped and immediately started merely to
+                // move from the quick probe to the detailed probe.
+                if (check(strategy, quick = false, startEngine = false)) {
                     candidate = strategy
                     break
                 }
