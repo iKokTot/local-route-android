@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Stop
@@ -229,7 +228,6 @@ private fun LocalRouteApp(
     }
     var lastSuccessful by remember { mutableStateOf(store.lastSuccessfulStrategy()) }
     var customCommand by remember { mutableStateOf(store.customCommand()) }
-    var autostart by remember { mutableStateOf(store.autostartRequested()) }
     val engine by LocalDpiRuntime.state.collectAsState()
 
     Scaffold(
@@ -268,9 +266,7 @@ private fun LocalRouteApp(
                     onStart = { strategy -> onStart(selected, strategy) },
                     onStop = onStop,
                     onOpenDiagnostics = { tab = 1 },
-                    onAddTile = onAddTile,
-                    autostart = autostart,
-                    onAutostartChange = { value -> autostart = value; store.setAutostartRequested(value) }
+                    onAddTile = onAddTile
                 )
             } else {
                 DiagnosticsScreen(
@@ -334,9 +330,7 @@ private fun ControlScreen(
     onStart: (DpiStrategy) -> Unit,
     onStop: () -> Unit,
     onOpenDiagnostics: () -> Unit,
-    onAddTile: () -> Unit,
-    autostart: Boolean,
-    onAutostartChange: (Boolean) -> Unit
+    onAddTile: () -> Unit
 ) {
     val active = engine.phase == EnginePhase.ACTIVE || engine.phase == EnginePhase.STARTING
     // Stage one has exactly one supported profile.  The primary action must
@@ -389,20 +383,17 @@ private fun ControlScreen(
             Spacer(Modifier.width(8.dp))
             Text("Включить защиту", fontWeight = FontWeight.Bold)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(
-                onClick = onOpenDiagnostics, modifier = Modifier.weight(1f).height(50.dp),
-                border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(14.dp)
-            ) { Icon(Icons.Rounded.Science, null); Spacer(Modifier.width(6.dp)); Text("Проверить") }
-            OutlinedButton(
-                onClick = onStop, enabled = active, modifier = Modifier.weight(1f).height(50.dp),
-                border = BorderStroke(1.dp, if (active) Coral else Line), shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = if (active) Coral else TextMuted)
-            ) { Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(6.dp)); Text("Остановить") }
-        }
+        OutlinedButton(
+            onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth().height(50.dp),
+            border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(14.dp)
+        ) { Icon(Icons.Rounded.Science, null); Spacer(Modifier.width(8.dp)); Text("Проверить профиль") }
+        OutlinedButton(
+            onClick = onStop, enabled = active, modifier = Modifier.fillMaxWidth().height(54.dp),
+            border = BorderStroke(1.dp, if (active) Coral else Line), shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = if (active) Coral else TextMuted)
+        ) { Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(8.dp)); Text("Остановить защиту", fontWeight = FontWeight.Bold) }
 
         QuickTileCard(onAddTile)
-        AutostartCard(autostart, onAutostartChange)
         ProjectLinks()
     }
 }
@@ -777,24 +768,6 @@ private fun QuickTileCard(onAddTile: () -> Unit) {
                 border = BorderStroke(1.dp, Mint.copy(alpha = .65f)), shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Mint)
             ) { Text("Добавить плитку в шторку", fontWeight = FontWeight.Bold) }
-        }
-    }
-}
-
-@Composable
-private fun AutostartCard(enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Panel), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Security, null, tint = Mint, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("После перезагрузки", fontWeight = FontWeight.Bold)
-                Text("Запуск только при сохранённом согласии Android VPN", color = TextMuted, fontSize = 12.sp)
-            }
-            Switch(
-                checked = enabled, onCheckedChange = onChange,
-                colors = SwitchDefaults.colors(checkedThumbColor = Night, checkedTrackColor = Mint, uncheckedTrackColor = Line)
-            )
         }
     }
 }

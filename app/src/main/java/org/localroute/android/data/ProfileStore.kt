@@ -20,6 +20,4 @@ class ProfileStore(context: Context) {
     }
     fun saveSelectedServices(services: Set<ServiceTarget>) =
         prefs.edit().putStringSet("selected_services", services.map { it.name }.toSet()).apply()
-    fun autostartRequested(): Boolean = prefs.getBoolean("autostart_requested", false)
-    fun setAutostartRequested(value: Boolean) = prefs.edit().putBoolean("autostart_requested", value).apply()
 }

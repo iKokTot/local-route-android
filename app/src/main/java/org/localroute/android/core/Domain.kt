@@ -10,8 +10,7 @@ enum class ServiceTarget(val title: String, val packageName: String) {
 data class RouteProfile(
     val mode: TrafficMode = TrafficMode.LOCAL_DPI,
     val services: Set<ServiceTarget> = setOf(ServiceTarget.YOUTUBE, ServiceTarget.DISCORD),
-    val strategyId: String? = null,
-    val autostartRequested: Boolean = false
+    val strategyId: String? = null
 )
 
 data class DpiStrategy(
