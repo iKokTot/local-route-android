@@ -1,15 +1,42 @@
+import java.util.Properties
+
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
+
+val releaseSigningProperties = Properties().apply {
+    val propertiesFile = rootProject.file("release-signing.properties")
+    if (propertiesFile.isFile) propertiesFile.inputStream().use(::load)
+}
 
 android {
     namespace = "org.localroute.android"
     compileSdk = 35
     // Match the toolchain used by the proven ByeDPIAndroid 1.2 build.
     ndkVersion = "25.1.8937393"
-    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 11; versionName = "0.11.0-mvp"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 11; versionName = "0.11.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true; buildConfig = true }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     packaging { resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") }
+
+    signingConfigs {
+        create("release") {
+            val storeFileValue = releaseSigningProperties.getProperty("storeFile")
+            if (storeFileValue != null) {
+                storeFile = rootProject.file(storeFileValue)
+                storePassword = releaseSigningProperties.getProperty("storePassword")
+                keyAlias = releaseSigningProperties.getProperty("keyAlias")
+                keyPassword = releaseSigningProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (releaseSigningProperties.getProperty("storeFile") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
 }
 
 dependencies {

@@ -5,5 +5,8 @@ app/.cxx/
 app/src/main/jniLibs/
 outputs/
 local.properties
+release-signing.properties
+*.keystore
+*.jks
 *.iml
 work/
