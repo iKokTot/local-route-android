@@ -339,7 +339,10 @@ private fun ControlScreen(
     onAutostartChange: (Boolean) -> Unit
 ) {
     val active = engine.phase == EnginePhase.ACTIVE || engine.phase == EnginePhase.STARTING
-    val last = AndroidStrategies.resolve(lastSuccessful, customCommand)
+    // Stage one has exactly one supported profile.  The primary action must
+    // start it directly; a user should never need to run an auto-picker just
+    // to turn on the only available engine.
+    val last = AndroidStrategies.resolve(lastSuccessful, customCommand) ?: AndroidStrategies.all.first()
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -378,30 +381,19 @@ private fun ControlScreen(
             )
         }
 
-        if (last != null) {
-            Button(
-                onClick = { onStart(last) }, enabled = selected.isNotEmpty() && !active,
-                modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Rounded.PlayArrow, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Запустить сохранённую · ${last.title}", fontWeight = FontWeight.Bold)
-            }
-        } else {
-            Button(
-                onClick = onOpenDiagnostics, enabled = selected.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Rounded.Tune, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Подобрать рабочую стратегию", fontWeight = FontWeight.Bold)
-            }
+        Button(
+            onClick = { onStart(last) }, enabled = selected.isNotEmpty() && !active,
+            modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)
+        ) {
+            Icon(Icons.Rounded.PlayArrow, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Включить защиту", fontWeight = FontWeight.Bold)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(
                 onClick = onOpenDiagnostics, modifier = Modifier.weight(1f).height(50.dp),
                 border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(14.dp)
-            ) { Icon(Icons.Rounded.Refresh, null); Spacer(Modifier.width(6.dp)); Text("Подобрать") }
+            ) { Icon(Icons.Rounded.Science, null); Spacer(Modifier.width(6.dp)); Text("Проверить") }
             OutlinedButton(
                 onClick = onStop, enabled = active, modifier = Modifier.weight(1f).height(50.dp),
                 border = BorderStroke(1.dp, if (active) Coral else Line), shape = RoundedCornerShape(14.dp),
@@ -538,18 +530,18 @@ private fun DiagnosticsScreen(
             running || pendingCandidate != null
         )
         Text(
-            "Автопроверка только отбрасывает явно нерабочие варианты. Стратегия считается рабочей и сохраняется лишь после вашей проверки YouTube/Discord.",
+            "Проверка запускает единственный профиль ByeDPIAndroid. Он сохраняется как рабочий только после вашей проверки YouTube/Discord.",
             color = TextMuted,
             fontSize = 14.sp
         )
         Button(
-            onClick = { runAutoTune() }, enabled = !running && pendingCandidate == null && selected.isNotEmpty(),
+            onClick = { runSingle(AndroidStrategies.all.first()) }, enabled = !running && pendingCandidate == null && selected.isNotEmpty(),
             modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(14.dp)
         ) {
             if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Night)
             else Icon(Icons.Rounded.Bolt, null)
             Spacer(Modifier.width(9.dp))
-            Text(if (running) "Проверяем…" else "Запустить автоподбор", fontWeight = FontWeight.Bold)
+            Text(if (running) "Проверяем…" else "Проверить профиль", fontWeight = FontWeight.Bold)
         }
 
         StatusPanel(statusText, details, running)
@@ -624,7 +616,7 @@ private fun DiagnosticsScreen(
             }
         }
 
-        SectionTitle("ANDROID-СТРАТЕГИИ", "${AndroidStrategies.all.size} вариантов")
+        SectionTitle("ANDROID-ПРОФИЛЬ", "1 проверяемый профиль")
         AndroidStrategies.all.forEachIndexed { index, strategy ->
             StrategyCard(index + 1, strategy, statuses[strategy.id] ?: RunState.IDLE, lastSuccessful == strategy.id, running || pendingCandidate != null) {
                 runSingle(strategy)
@@ -700,7 +692,7 @@ private fun CandidateConfirmationCard(
             ) {
                 Icon(Icons.Rounded.ErrorOutline, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Не работает — следующий вариант")
+                Text("Не работает — остановить")
             }
         }
     }
