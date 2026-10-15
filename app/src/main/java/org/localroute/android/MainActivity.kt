@@ -271,25 +271,9 @@ private fun LocalRouteApp(
             } else {
                 DiagnosticsScreen(
                     selected = selected,
-                    lastSuccessful = lastSuccessful,
-                    customCommand = customCommand,
-                    onCustomCommandChange = { value ->
-                        customCommand = value
-                        store.saveCustomCommand(value)
-                    },
                     onStart = onStart,
                     onStop = onStop,
-                    onOpenService = onOpenService,
-                    onConfirmed = { strategy ->
-                        store.saveLastSuccessfulStrategy(strategy.id)
-                        lastSuccessful = strategy.id
-                    },
-                    onRejected = { strategy ->
-                        if (lastSuccessful == strategy.id) {
-                            store.clearLastSuccessfulStrategy()
-                            lastSuccessful = null
-                        }
-                    }
+                    onOpenService = onOpenService
                 )
             }
         }
@@ -402,6 +386,83 @@ private enum class RunState { IDLE, RUNNING, CANDIDATE, SUCCESS, FAILED }
 
 @Composable
 private fun DiagnosticsScreen(
+    selected: Set<ServiceTarget>,
+    onStart: (Set<ServiceTarget>, DpiStrategy) -> Unit,
+    onStop: () -> Unit,
+    onOpenService: (ServiceTarget) -> Unit
+) {
+    val engine by LocalDpiRuntime.state.collectAsState()
+    val active = engine.phase == EnginePhase.ACTIVE || engine.phase == EnginePhase.STARTING
+    var logsOpen by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        ScreenHeader("ПРОВЕРКА", "Проверка работы", if (active) "Защита включена" else "Нужен запуск", active)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(18.dp)
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Rounded.CheckCircle, null, tint = Mint, modifier = Modifier.size(26.dp))
+                Text(if (active) "Проверьте YouTube" else "Сначала включите защиту", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text(
+                    if (active) "Откройте YouTube и включите видео. Только реальное воспроизведение показывает, что защита работает в вашей сети."
+                    else "Автоматический сетевой тест отключён: он не может честно подтвердить работу YouTube и мог выдавать неверный результат.",
+                    color = TextMuted, fontSize = 14.sp, lineHeight = 20.sp
+                )
+                if (active) {
+                    selected.forEach { service ->
+                        OutlinedButton(
+                            onClick = { onOpenService(service) }, modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, Mint.copy(alpha = .65f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Mint)
+                        ) {
+                            Icon(Icons.Rounded.OpenInNew, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Открыть ${service.title}", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = { onStart(selected, AndroidStrategies.all.first()) },
+                        enabled = selected.isNotEmpty(), modifier = Modifier.fillMaxWidth().height(54.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Rounded.PlayArrow, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Включить защиту", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable { logsOpen = !logsOpen },
+            colors = CardDefaults.cardColors(containerColor = Panel), border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Terminal, null, tint = Mint)
+                    Spacer(Modifier.width(10.dp))
+                    Text("Технический журнал", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text(if (logsOpen) "Скрыть" else "Показать", color = Mint, fontSize = 12.sp)
+                }
+                if (logsOpen) {
+                    HorizontalDivider(color = Line)
+                    val lines = engine.log
+                    Text(if (lines.isEmpty()) "Событий пока нет" else lines.joinToString("\n"), color = TextMuted, fontSize = 11.sp, lineHeight = 16.sp)
+                    Text("Журнал остаётся только на устройстве.", color = Mint, fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegacyDiagnosticsScreen(
     selected: Set<ServiceTarget>,
     lastSuccessful: String?,
     customCommand: String,
