@@ -4,7 +4,7 @@ android {
     namespace = "org.localroute.android"
     compileSdk = 35
     ndkVersion = "30.0.16248370"
-    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 3; versionName = "0.3.0-mvp"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 4; versionName = "0.4.0-mvp"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true; buildConfig = true }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "4.1.2" } }

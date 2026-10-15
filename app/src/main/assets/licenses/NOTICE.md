@@ -11,6 +11,8 @@ this repository is the intended source location when publication is authorised.
 * **ByeDPIAndroid** — GPL-3.0, copyright its contributors.
   Source: https://github.com/dovecoteescapee/ByeDPIAndroid
   License: https://github.com/dovecoteescapee/ByeDPIAndroid/blob/master/LICENSE
+  Android implementation and settings flow additionally reviewed at release
+  `v1.2.0`, revision `9d289f096ed8373dd3734ab9966312c4c9e8d0aa`.
   Its local-VPN/JNI architecture was reviewed. The JNI boundary and local
   VpnService/SOCKS design in this project are adapted from that architecture
   and distributed under GPL-3.0-or-later. No source was copied without review.

@@ -19,6 +19,8 @@ class LocalDpiVpnService : VpnService() {
         const val ACTION_START = "org.localroute.START"
         const val ACTION_STOP = "org.localroute.STOP"
         const val EXTRA_STRATEGY = "strategy"
+        const val EXTRA_STRATEGY_TITLE = "strategy_title"
+        const val EXTRA_STRATEGY_ARGUMENTS = "strategy_arguments"
         const val EXTRA_PACKAGES = "packages"
         private const val CHANNEL = "local_route_vpn"
     }
@@ -37,9 +39,18 @@ class LocalDpiVpnService : VpnService() {
             worker.execute(::stopLocal)
             return START_NOT_STICKY
         }
-        val strategy = AndroidStrategies.all.firstOrNull {
-            it.id == intent?.getStringExtra(EXTRA_STRATEGY)
-        } ?: AndroidStrategies.all.first()
+        val strategyId = intent?.getStringExtra(EXTRA_STRATEGY)
+        val suppliedArguments = intent?.getStringArrayExtra(EXTRA_STRATEGY_ARGUMENTS)
+        val strategy = if (strategyId != null && suppliedArguments != null) {
+            DpiStrategy(
+                strategyId,
+                intent.getStringExtra(EXTRA_STRATEGY_TITLE) ?: strategyId,
+                "Пользовательский Android-профиль",
+                suppliedArguments.toList()
+            )
+        } else {
+            AndroidStrategies.all.firstOrNull { it.id == strategyId } ?: AndroidStrategies.all.first()
+        }
         val packages = intent?.getStringArrayExtra(EXTRA_PACKAGES) ?: emptyArray()
 
         LocalDpiRuntime.update(EnginePhase.STARTING, "Запуск ${strategy.title}…", strategy.id)
@@ -65,7 +76,10 @@ class LocalDpiVpnService : VpnService() {
             .setSession("Local Route · ${strategy.title}")
             .addAddress("10.10.10.10", 32)
             .addRoute("0.0.0.0", 0)
-            .addDnsServer("1.1.1.1")
+
+        // Match ByeDPIAndroid's default: do not force a public resolver.
+        // Android keeps using the network-provided DNS when no VPN DNS is set.
+        // This avoids breaking networks where 1.1.1.1 is blocked or intercepted.
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             builder.setMetered(false)

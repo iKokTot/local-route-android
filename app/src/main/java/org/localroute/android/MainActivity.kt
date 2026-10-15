@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Science
@@ -56,6 +57,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -108,7 +110,7 @@ class MainActivity : ComponentActivity() {
     companion object { const val EXTRA_START_FROM_TILE = "start_from_tile" }
 
     private var servicesToStart: Set<ServiceTarget> = emptySet()
-    private var strategyToStart: String? = null
+    private var strategyToStart: DpiStrategy? = null
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         continueVpnRequest()
     }
@@ -127,18 +129,21 @@ class MainActivity : ComponentActivity() {
                     isInstalled = ::isInstalled,
                     onStart = ::requestVpn,
                     onStop = ::stopVpn,
-                    onAddTile = ::requestQuickTile
+                    onAddTile = ::requestQuickTile,
+                    onOpenService = ::openService
                 )
             }
         }
         if (intent.getBooleanExtra(EXTRA_START_FROM_TILE, false)) {
-            requestVpn(store.selectedServices(), store.lastSuccessfulStrategy() ?: AndroidStrategies.all.first().id)
+            val strategy = AndroidStrategies.resolve(store.lastSuccessfulStrategy(), store.customCommand())
+                ?: AndroidStrategies.all.first()
+            requestVpn(store.selectedServices(), strategy)
         }
     }
 
-    private fun requestVpn(services: Set<ServiceTarget>, strategyId: String) {
+    private fun requestVpn(services: Set<ServiceTarget>, strategy: DpiStrategy) {
         servicesToStart = services
-        strategyToStart = strategyId
+        strategyToStart = strategy
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
@@ -152,10 +157,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startLocalService() {
+        val strategy = strategyToStart ?: AndroidStrategies.all.first()
         ContextCompat.startForegroundService(this, Intent(this, LocalDpiVpnService::class.java)
             .setAction(LocalDpiVpnService.ACTION_START)
-            .putExtra(LocalDpiVpnService.EXTRA_PACKAGES, servicesToStart.map { it.packageName }.toTypedArray())
-            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategyToStart))
+            .putExtra(
+                LocalDpiVpnService.EXTRA_PACKAGES,
+                servicesToStart.flatMap { it.vpnPackages }.distinct().toTypedArray()
+            )
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategy.id)
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_TITLE, strategy.title)
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray()))
+    }
+
+    private fun openService(target: ServiceTarget) {
+        val launch = packageManager.getLaunchIntentForPackage(target.packageName)
+        if (launch != null) startActivity(launch)
+        else LocalDpiRuntime.update(EnginePhase.ERROR, "${target.title} не установлен на устройстве")
     }
 
     private fun stopVpn() {
@@ -204,9 +221,10 @@ private fun LocalRouteTheme(content: @Composable () -> Unit) {
 private fun LocalRouteApp(
     store: ProfileStore,
     isInstalled: (ServiceTarget) -> Boolean,
-    onStart: (Set<ServiceTarget>, String) -> Unit,
+    onStart: (Set<ServiceTarget>, DpiStrategy) -> Unit,
     onStop: () -> Unit,
-    onAddTile: () -> Unit
+    onAddTile: () -> Unit,
+    onOpenService: (ServiceTarget) -> Unit
 ) {
     var tab by remember { mutableStateOf(0) }
     var selected by remember {
@@ -216,6 +234,7 @@ private fun LocalRouteApp(
         mutableStateOf(available)
     }
     var lastSuccessful by remember { mutableStateOf(store.lastSuccessfulStrategy()) }
+    var customCommand by remember { mutableStateOf(store.customCommand()) }
     var autostart by remember { mutableStateOf(store.autostartRequested()) }
     val engine by LocalDpiRuntime.state.collectAsState()
 
@@ -247,11 +266,12 @@ private fun LocalRouteApp(
                     selected = selected,
                     installed = isInstalled,
                     lastSuccessful = lastSuccessful,
+                    customCommand = customCommand,
                     onToggleService = { service ->
                         selected = if (service in selected) selected - service else selected + service
                         store.saveSelectedServices(selected)
                     },
-                    onStart = { id -> onStart(selected, id) },
+                    onStart = { strategy -> onStart(selected, strategy) },
                     onStop = onStop,
                     onOpenDiagnostics = { tab = 1 },
                     onAddTile = onAddTile,
@@ -262,11 +282,23 @@ private fun LocalRouteApp(
                 DiagnosticsScreen(
                     selected = selected,
                     lastSuccessful = lastSuccessful,
+                    customCommand = customCommand,
+                    onCustomCommandChange = { value ->
+                        customCommand = value
+                        store.saveCustomCommand(value)
+                    },
                     onStart = onStart,
                     onStop = onStop,
+                    onOpenService = onOpenService,
                     onConfirmed = { strategy ->
                         store.saveLastSuccessfulStrategy(strategy.id)
                         lastSuccessful = strategy.id
+                    },
+                    onRejected = { strategy ->
+                        if (lastSuccessful == strategy.id) {
+                            store.clearLastSuccessfulStrategy()
+                            lastSuccessful = null
+                        }
                     }
                 )
             }
@@ -303,8 +335,9 @@ private fun ControlScreen(
     selected: Set<ServiceTarget>,
     installed: (ServiceTarget) -> Boolean,
     lastSuccessful: String?,
+    customCommand: String,
     onToggleService: (ServiceTarget) -> Unit,
-    onStart: (String) -> Unit,
+    onStart: (DpiStrategy) -> Unit,
     onStop: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onAddTile: () -> Unit,
@@ -312,7 +345,7 @@ private fun ControlScreen(
     onAutostartChange: (Boolean) -> Unit
 ) {
     val active = engine.phase == EnginePhase.ACTIVE || engine.phase == EnginePhase.STARTING
-    val last = AndroidStrategies.all.firstOrNull { it.id == lastSuccessful }
+    val last = AndroidStrategies.resolve(lastSuccessful, customCommand)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -348,7 +381,7 @@ private fun ControlScreen(
 
         if (last != null) {
             Button(
-                onClick = { onStart(last.id) }, enabled = selected.isNotEmpty() && !active,
+                onClick = { onStart(last) }, enabled = selected.isNotEmpty() && !active,
                 modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)
             ) {
                 Icon(Icons.Rounded.PlayArrow, null)
@@ -383,22 +416,28 @@ private fun ControlScreen(
     }
 }
 
-private enum class RunState { IDLE, RUNNING, SUCCESS, FAILED }
+private enum class RunState { IDLE, RUNNING, CANDIDATE, SUCCESS, FAILED }
 
 @Composable
 private fun DiagnosticsScreen(
     selected: Set<ServiceTarget>,
     lastSuccessful: String?,
-    onStart: (Set<ServiceTarget>, String) -> Unit,
+    customCommand: String,
+    onCustomCommandChange: (String) -> Unit,
+    onStart: (Set<ServiceTarget>, DpiStrategy) -> Unit,
     onStop: () -> Unit,
-    onConfirmed: (DpiStrategy) -> Unit
+    onOpenService: (ServiceTarget) -> Unit,
+    onConfirmed: (DpiStrategy) -> Unit,
+    onRejected: (DpiStrategy) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val statuses = remember { mutableStateMapOf<String, RunState>() }
     var running by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf("Выберите стратегию или запустите автоподбор") }
+    var statusText by remember { mutableStateOf("Запустите подбор. Результат сохранится только после вашей проверки в приложении.") }
     var details by remember { mutableStateOf<List<String>>(emptyList()) }
     var logsOpen by remember { mutableStateOf(false) }
+    var pendingCandidate by remember { mutableStateOf<DpiStrategy?>(null) }
+    var continueAfterRejection by remember { mutableStateOf(false) }
 
     suspend fun waitUntilActive(id: String): Boolean = withTimeoutOrNull<Boolean>(12_000) {
         while (true) {
@@ -413,7 +452,7 @@ private fun DiagnosticsScreen(
     suspend fun check(strategy: DpiStrategy, quick: Boolean): Boolean {
         statuses[strategy.id] = RunState.RUNNING
         statusText = "Запускаем ${strategy.title}…"
-        onStart(selected, strategy.id)
+        onStart(selected, strategy)
         if (!waitUntilActive(strategy.id)) {
             statuses[strategy.id] = RunState.FAILED
             details = listOf(LocalDpiRuntime.state.value.message)
@@ -421,61 +460,85 @@ private fun DiagnosticsScreen(
         }
         delay(350)
         statusText = if (quick) "Быстрая проверка ${strategy.title}" else "Подробная проверка ${strategy.title}"
-        val result = ConnectivityProbe.throughLocalSocks(selected, if (quick) 4000 else 9000)
+        val result = ConnectivityProbe.throughLocalSocks(
+            selected,
+            timeoutMs = if (quick) 4500 else 9000,
+            thorough = !quick
+        )
         details = result.lines
         result.lines.forEach { LocalDpiRuntime.log("${strategy.title}: $it") }
-        statuses[strategy.id] = if (result.successful) RunState.SUCCESS else RunState.FAILED
+        statuses[strategy.id] = if (result.successful) RunState.RUNNING else RunState.FAILED
         return result.successful
     }
 
-    fun runSingle(strategy: DpiStrategy) {
-        if (running || selected.isEmpty()) return
+    fun beginSearch(candidates: List<DpiStrategy>, automatic: Boolean, clear: Boolean) {
+        if (running || pendingCandidate != null || selected.isEmpty()) return
         scope.launch {
             running = true
-            val quickPassed = check(strategy, quick = true)
-            val confirmed = quickPassed && check(strategy, quick = false)
-            if (confirmed) {
-                onConfirmed(strategy)
-                statusText = "Подтверждено и сохранено: ${strategy.title}"
+            if (clear) statuses.clear()
+            details = emptyList()
+            var candidate: DpiStrategy? = null
+            for (strategy in candidates) {
+                if (!check(strategy, quick = true)) continue
+                if (check(strategy, quick = false)) {
+                    candidate = strategy
+                    break
+                }
+            }
+            if (candidate != null) {
+                statuses[candidate.id] = RunState.CANDIDATE
+                pendingCandidate = candidate
+                continueAfterRejection = automatic
+                statusText = "Кандидат запущен: ${candidate.title}"
+                details = details + "Автопроверка проверила несколько узлов, но не может доказать работу приложения. Откройте YouTube/Discord и подтвердите результат сами."
             } else {
-                statusText = "Стратегия не прошла проверку"
                 onStop()
+                statusText = if (automatic) {
+                    "Локальные Android-профили не прошли предварительную проверку"
+                } else {
+                    "Стратегия не прошла предварительную проверку"
+                }
+                if (automatic) details = details + "В этой сети может потребоваться будущий SECURE_TUNNEL."
             }
             running = false
         }
     }
 
-    fun runAutoTune() {
-        if (running || selected.isEmpty()) return
-        scope.launch {
-            running = true
-            statuses.clear()
-            details = emptyList()
-            var found: DpiStrategy? = null
-            for (strategy in AndroidStrategies.ordered(lastSuccessful)) {
-                if (!check(strategy, quick = true)) continue
-                if (check(strategy, quick = false)) { found = strategy; break }
-            }
-            if (found != null) {
-                onConfirmed(found)
-                statusText = "Рабочая стратегия сохранена: ${found.title}"
-            } else {
-                onStop()
-                statusText = "Локальные стратегии не сработали · ограниченная сеть"
-                details = details + "Для такой сети потребуется будущий серверный режим SECURE_TUNNEL."
-            }
-            running = false
+    fun orderedCandidates(): List<DpiStrategy> = buildList {
+        AndroidStrategies.custom(customCommand)?.let { add(it) }
+        addAll(AndroidStrategies.ordered(lastSuccessful).filterNot { strategy -> any { it.id == strategy.id } })
+    }
+
+    fun runAutoTune(afterId: String? = null) {
+        val ordered = orderedCandidates()
+        val candidates = if (afterId == null) ordered else {
+            val index = ordered.indexOfFirst { it.id == afterId }
+            if (index >= 0) ordered.drop(index + 1) else ordered
         }
+        beginSearch(candidates, automatic = true, clear = afterId == null)
+    }
+
+    fun runSingle(strategy: DpiStrategy) {
+        beginSearch(listOf(strategy), automatic = false, clear = false)
     }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        ScreenHeader("ДИАГНОСТИКА", "Проверка стратегий", if (running) "Идёт проверка" else "Готово", running)
-        Text("Сначала короткая проверка, затем подтверждение. Кандидаты запускаются строго по одному, чтобы не нагружать телефон.", color = TextMuted, fontSize = 14.sp)
+        ScreenHeader(
+            "ДИАГНОСТИКА",
+            "Проверка стратегий",
+            when { running -> "Идёт проверка"; pendingCandidate != null -> "Нужна проверка"; else -> "Готово" },
+            running || pendingCandidate != null
+        )
+        Text(
+            "Автопроверка только отбрасывает явно нерабочие варианты. Стратегия считается рабочей и сохраняется лишь после вашей проверки YouTube/Discord.",
+            color = TextMuted,
+            fontSize = 14.sp
+        )
         Button(
-            onClick = ::runAutoTune, enabled = !running && selected.isNotEmpty(),
+            onClick = { runAutoTune() }, enabled = !running && pendingCandidate == null && selected.isNotEmpty(),
             modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(14.dp)
         ) {
             if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Night)
@@ -485,9 +548,80 @@ private fun DiagnosticsScreen(
         }
 
         StatusPanel(statusText, details, running)
+
+        pendingCandidate?.let { candidate ->
+            CandidateConfirmationCard(
+                strategy = candidate,
+                services = selected,
+                onOpenService = onOpenService,
+                onWorks = {
+                    statuses[candidate.id] = RunState.SUCCESS
+                    onConfirmed(candidate)
+                    pendingCandidate = null
+                    continueAfterRejection = false
+                    statusText = "Подтверждено вами и сохранено: ${candidate.title}"
+                    details = listOf("Быстрый запуск и плитка теперь используют эту стратегию первой.")
+                },
+                onFails = {
+                    val resume = continueAfterRejection
+                    statuses[candidate.id] = RunState.FAILED
+                    onRejected(candidate)
+                    pendingCandidate = null
+                    continueAfterRejection = false
+                    onStop()
+                    statusText = "Вы отметили стратегию как нерабочую"
+                    if (resume) {
+                        scope.launch {
+                            delay(650)
+                            runAutoTune(candidate.id)
+                        }
+                    }
+                }
+            )
+        }
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            border = BorderStroke(1.dp, Line),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Своя строка ByeDPI", fontWeight = FontWeight.Bold)
+                Text(
+                    "Можно вставить параметры из рабочего ByeDPIAndroid. Локальный адрес, порт и внешние прокси изменять нельзя.",
+                    color = TextMuted,
+                    fontSize = 12.sp
+                )
+                OutlinedTextField(
+                    value = customCommand,
+                    onValueChange = onCustomCommandChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    maxLines = 6,
+                    enabled = !running && pendingCandidate == null,
+                    placeholder = { Text(AndroidStrategies.BYEDPI_ANDROID_TCP_UDP_COMMAND, fontSize = 10.sp) }
+                )
+                val custom = AndroidStrategies.custom(customCommand)
+                OutlinedButton(
+                    onClick = { custom?.let(::runSingle) },
+                    enabled = custom != null && !running && pendingCandidate == null && selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, Mint.copy(alpha = .65f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Mint)
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Проверить свою строку")
+                }
+                if (customCommand.isNotBlank() && custom == null) {
+                    Text("Строка пуста либо содержит запрещённую настройку адреса/внешнего прокси.", color = Coral, fontSize = 11.sp)
+                }
+            }
+        }
+
         SectionTitle("ANDROID-СТРАТЕГИИ", "${AndroidStrategies.all.size} вариантов")
         AndroidStrategies.all.forEachIndexed { index, strategy ->
-            StrategyCard(index + 1, strategy, statuses[strategy.id] ?: RunState.IDLE, lastSuccessful == strategy.id, running) {
+            StrategyCard(index + 1, strategy, statuses[strategy.id] ?: RunState.IDLE, lastSuccessful == strategy.id, running || pendingCandidate != null) {
                 runSingle(strategy)
             }
         }
@@ -513,6 +647,57 @@ private fun DiagnosticsScreen(
             }
         }
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun CandidateConfirmationCard(
+    strategy: DpiStrategy,
+    services: Set<ServiceTarget>,
+    onOpenService: (ServiceTarget) -> Unit,
+    onWorks: () -> Unit,
+    onFails: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MintDark),
+        border = BorderStroke(1.dp, Mint.copy(alpha = .7f)),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Проверьте реальное приложение", color = Mint, fontWeight = FontWeight.ExtraBold)
+            Text(strategy.title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(
+                "VPN оставлен включённым. Откройте выбранные сервисы, запустите видео или соединение, затем вернитесь сюда.",
+                color = TextMuted,
+                fontSize = 13.sp
+            )
+            services.forEach { service ->
+                OutlinedButton(
+                    onClick = { onOpenService(service) },
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, Line)
+                ) {
+                    Icon(Icons.Rounded.OpenInNew, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Открыть ${service.title}")
+                }
+            }
+            Button(onClick = onWorks, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.CheckCircle, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Работает — сохранить", fontWeight = FontWeight.Bold)
+            }
+            OutlinedButton(
+                onClick = onFails,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, Coral),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Coral)
+            ) {
+                Icon(Icons.Rounded.ErrorOutline, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Не работает — следующий вариант")
+            }
+        }
     }
 }
 
@@ -637,7 +822,11 @@ private fun StatusPanel(title: String, details: List<String>, running: Boolean) 
 
 @Composable
 private fun StrategyCard(index: Int, strategy: DpiStrategy, state: RunState, saved: Boolean, blocked: Boolean, onClick: () -> Unit) {
-    val tint = when (state) { RunState.SUCCESS -> Mint; RunState.FAILED -> Coral; else -> TextMuted }
+    val tint = when (state) {
+        RunState.SUCCESS, RunState.CANDIDATE -> Mint
+        RunState.FAILED -> Coral
+        else -> TextMuted
+    }
     Card(
         modifier = Modifier.fillMaxWidth().clickable(enabled = !blocked, onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = if (saved) MintDark else Panel),
@@ -658,6 +847,7 @@ private fun StrategyCard(index: Int, strategy: DpiStrategy, state: RunState, sav
             Spacer(Modifier.width(8.dp))
             when (state) {
                 RunState.RUNNING -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Mint)
+                RunState.CANDIDATE -> Icon(Icons.Rounded.Science, "Нужна проверка в приложении", tint = tint)
                 RunState.SUCCESS -> Icon(Icons.Rounded.CheckCircle, null, tint = tint)
                 RunState.FAILED -> Icon(Icons.Rounded.ErrorOutline, null, tint = tint)
                 RunState.IDLE -> Icon(Icons.Rounded.PlayArrow, "Проверить", tint = tint)

@@ -41,11 +41,17 @@ class LocalRouteTileService : TileService() {
             return
         }
         val store = ProfileStore(this)
-        val strategy = store.lastSuccessfulStrategy() ?: AndroidStrategies.all.first().id
+        val strategy = AndroidStrategies.resolve(store.lastSuccessfulStrategy(), store.customCommand())
+            ?: AndroidStrategies.all.first()
         ContextCompat.startForegroundService(this, Intent(this, LocalDpiVpnService::class.java)
             .setAction(LocalDpiVpnService.ACTION_START)
-            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategy)
-            .putExtra("packages", store.selectedServices().map { it.packageName }.toTypedArray()))
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategy.id)
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_TITLE, strategy.title)
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray())
+            .putExtra(
+                LocalDpiVpnService.EXTRA_PACKAGES,
+                store.selectedServices().flatMap { it.vpnPackages }.distinct().toTypedArray()
+            ))
         qsTile?.state = Tile.STATE_ACTIVE
         qsTile?.updateTile()
     }

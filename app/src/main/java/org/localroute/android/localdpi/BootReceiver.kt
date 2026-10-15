@@ -14,10 +14,16 @@ class BootReceiver : BroadcastReceiver() {
         if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
         val store = ProfileStore(context)
         if (!store.autostartRequested() || VpnService.prepare(context) != null) return
-        val strategy = store.lastSuccessfulStrategy() ?: AndroidStrategies.all.first().id
+        val strategy = AndroidStrategies.resolve(store.lastSuccessfulStrategy(), store.customCommand())
+            ?: AndroidStrategies.all.first()
         ContextCompat.startForegroundService(context, Intent(context, LocalDpiVpnService::class.java)
             .setAction(LocalDpiVpnService.ACTION_START)
-            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategy)
-            .putExtra(LocalDpiVpnService.EXTRA_PACKAGES, store.selectedServices().map { it.packageName }.toTypedArray()))
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY, strategy.id)
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_TITLE, strategy.title)
+            .putExtra(LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray())
+            .putExtra(
+                LocalDpiVpnService.EXTRA_PACKAGES,
+                store.selectedServices().flatMap { it.vpnPackages }.distinct().toTypedArray()
+            ))
     }
 }
