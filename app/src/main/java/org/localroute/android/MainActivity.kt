@@ -102,6 +102,11 @@ import org.localroute.android.tunnel.SecureTunnelStore
 import org.localroute.android.tunnel.TunnelServerProfile
 import org.localroute.android.tunnel.TunnelServerProfiles
 import org.localroute.android.tunnel.TunnelState
+import org.localroute.android.tunnel.VlessAppTarget
+import org.localroute.android.tunnel.VlessRouteProfile
+import org.localroute.android.tunnel.VlessRuntime
+import org.localroute.android.tunnel.VlessStore
+import org.localroute.android.tunnel.VlessVpnService
 import org.localroute.android.tunnel.WireGuardSecureTunnelController
 
 private val Night = Color(0xFF0E1720)
@@ -119,7 +124,9 @@ class MainActivity : ComponentActivity() {
 
     private var strategyToStart: DpiStrategy? = null
     private var secureTunnelStartRequested = false
+    private var vlessStartRequested = false
     private lateinit var secureTunnelStore: SecureTunnelStore
+    private lateinit var vlessStore: VlessStore
     private lateinit var secureTunnelController: WireGuardSecureTunnelController
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         continueVpnRequest()
@@ -133,6 +140,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val store = ProfileStore(this)
         secureTunnelStore = SecureTunnelStore(this)
+        vlessStore = VlessStore(this)
         secureTunnelController = WireGuardSecureTunnelController(this, secureTunnelStore)
         setContent {
             LocalRouteTheme {
@@ -146,7 +154,12 @@ class MainActivity : ComponentActivity() {
                     secureTunnelProfileName = secureTunnelStore.activeProfile()?.name.orEmpty(),
                     secureTunnelConfiguration = secureTunnelStore.configuration().orEmpty(),
                     onSaveSecureTunnelProfile = ::saveSecureTunnelProfile,
-                    onStartSecureTunnel = ::requestSecureTunnel
+                    onStartSecureTunnel = ::requestSecureTunnel,
+                    vlessUri = vlessStore.uri().orEmpty(),
+                    vlessProfile = vlessStore.routeProfile(),
+                    isPackageInstalled = ::isPackageInstalled,
+                    onSaveVless = ::saveVless,
+                    onStartVless = ::requestVless
                 )
             }
         }
@@ -159,6 +172,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestVpn(services: Set<ServiceTarget>, strategy: DpiStrategy) {
         secureTunnelStartRequested = false
+        vlessStartRequested = false
         strategyToStart = strategy
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -176,6 +190,11 @@ class MainActivity : ComponentActivity() {
         if (secureTunnelStartRequested) {
             secureTunnelStartRequested = false
             startSecureTunnel()
+            return
+        }
+        if (vlessStartRequested) {
+            vlessStartRequested = false
+            ContextCompat.startForegroundService(this, Intent(this, VlessVpnService::class.java).setAction(VlessVpnService.ACTION_START))
             return
         }
         val strategy = strategyToStart ?: AndroidStrategies.all.first()
@@ -201,7 +220,9 @@ class MainActivity : ComponentActivity() {
             return
         }
         secureTunnelStartRequested = true
+        vlessStartRequested = false
         startService(Intent(this, LocalDpiVpnService::class.java).setAction(LocalDpiVpnService.ACTION_STOP))
+        startService(Intent(this, VlessVpnService::class.java).setAction(VlessVpnService.ACTION_STOP))
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
@@ -222,6 +243,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun saveVless(uri: String, profile: VlessRouteProfile) {
+        try {
+            org.localroute.android.tunnel.VlessUriParser.parse(uri)
+            vlessStore.save(uri, profile)
+            VlessRuntime.update(TunnelState.Disconnected, "VLESS-профиль сохранён на устройстве")
+        } catch (error: IllegalArgumentException) {
+            VlessRuntime.update(TunnelState.InvalidConfig(error.message.orEmpty()), error.message ?: "Некорректная VLESS-ссылка")
+        }
+    }
+
+    private fun requestVless() {
+        val uri = vlessStore.uri().orEmpty()
+        val profile = vlessStore.routeProfile()
+        try {
+            org.localroute.android.tunnel.VlessUriParser.parse(uri)
+            check(profile.routeAllApplications || profile.selectedPackages.isNotEmpty()) { "Выберите приложения или включите весь интернет" }
+        } catch (error: Exception) {
+            VlessRuntime.update(TunnelState.InvalidConfig(error.message.orEmpty()), error.message ?: "Проверьте VLESS-профиль")
+            return
+        }
+        secureTunnelStartRequested = false
+        vlessStartRequested = true
+        startService(Intent(this, LocalDpiVpnService::class.java).setAction(LocalDpiVpnService.ACTION_STOP))
+        lifecycleScope.launch { secureTunnelController.disconnect() }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else continueVpnRequest()
+    }
+
     private fun openService(target: ServiceTarget) {
         val launch = packageManager.getLaunchIntentForPackage(target.packageName)
         if (launch != null) startActivity(launch)
@@ -230,6 +280,7 @@ class MainActivity : ComponentActivity() {
 
     private fun stopVpn() {
         startService(Intent(this, LocalDpiVpnService::class.java).setAction(LocalDpiVpnService.ACTION_STOP))
+        startService(Intent(this, VlessVpnService::class.java).setAction(VlessVpnService.ACTION_STOP))
         lifecycleScope.launch {
             secureTunnelController.disconnect()
             SecureTunnelRuntime.update(TunnelState.Disconnected, "Защита остановлена")
@@ -259,6 +310,10 @@ class MainActivity : ComponentActivity() {
     private fun isInstalled(target: ServiceTarget): Boolean = runCatching {
         @Suppress("DEPRECATION") packageManager.getApplicationInfo(target.packageName, 0)
     }.isSuccess
+
+    private fun isPackageInstalled(packageName: String): Boolean = runCatching {
+        @Suppress("DEPRECATION") packageManager.getApplicationInfo(packageName, 0)
+    }.isSuccess
 }
 
 @Composable
@@ -285,7 +340,12 @@ private fun LocalRouteApp(
     secureTunnelProfileName: String,
     secureTunnelConfiguration: String,
     onSaveSecureTunnelProfile: (String, String) -> Unit,
-    onStartSecureTunnel: () -> Unit
+    onStartSecureTunnel: () -> Unit,
+    vlessUri: String,
+    vlessProfile: VlessRouteProfile,
+    isPackageInstalled: (String) -> Boolean,
+    onSaveVless: (String, VlessRouteProfile) -> Unit,
+    onStartVless: () -> Unit
 ) {
     var tab by remember { mutableStateOf(0) }
     var selected by remember {
@@ -302,7 +362,7 @@ private fun LocalRouteApp(
         containerColor = Night,
         bottomBar = {
             NavigationBar(containerColor = Panel, tonalElevation = 0.dp) {
-                val destinations = listOf("Управление" to Icons.Rounded.Dashboard, "Проверка" to Icons.Rounded.Science, "Туннель" to Icons.Rounded.Security)
+                val destinations = listOf("Управление" to Icons.Rounded.Dashboard, "Проверка" to Icons.Rounded.Science, "Туннель" to Icons.Rounded.Security, "VLESS" to Icons.Rounded.Tune)
                 destinations.forEachIndexed { index, item ->
                     NavigationBarItem(
                         selected = tab == index,
@@ -343,7 +403,7 @@ private fun LocalRouteApp(
                     onStop = onStop,
                     onOpenService = onOpenService
                 )
-            } else {
+            } else if (tab == 2) {
                 SecureTunnelScreen(
                     initialProfileName = secureTunnelProfileName,
                     initialConfiguration = secureTunnelConfiguration,
@@ -351,8 +411,114 @@ private fun LocalRouteApp(
                     onStart = onStartSecureTunnel,
                     onStop = onStop
                 )
+            } else {
+                VlessScreen(
+                    initialUri = vlessUri,
+                    initialProfile = vlessProfile,
+                    isInstalled = isPackageInstalled,
+                    onSave = onSaveVless,
+                    onStart = onStartVless,
+                    onStop = onStop
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun VlessScreen(
+    initialUri: String,
+    initialProfile: VlessRouteProfile,
+    isInstalled: (String) -> Boolean,
+    onSave: (String, VlessRouteProfile) -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit
+) {
+    var uri by remember { mutableStateOf(initialUri) }
+    var selectedPackages by remember { mutableStateOf(initialProfile.selectedPackages) }
+    var routeAll by remember { mutableStateOf(initialProfile.routeAllApplications) }
+    val status by VlessRuntime.state.collectAsState()
+    val active = status.state == TunnelState.Connected || status.state == TunnelState.Connecting
+    fun profile() = VlessRouteProfile(selectedPackages, routeAll)
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        ScreenHeader("МОЙ VLESS", "Маршруты приложений", if (active) "Подключён" else "Не подключён", active)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = if (active) MintDark else Panel),
+            border = BorderStroke(1.dp, if (active) Mint.copy(alpha = .45f) else Line), shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                IconBadge(Icons.Rounded.Security, if (active) Mint else TextMuted)
+                Text("Только выбранные приложения", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                Text(status.message, color = TextMuted, fontSize = 13.sp)
+                Text("По умолчанию VLESS не перехватывает весь телефон: в VPN попадут только отмеченные ниже приложения. Локальный DPI и VLESS нельзя включить одновременно.", color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp)
+            }
+        }
+        Text("ПОДКЛЮЧЕНИЕ", color = Mint, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+        OutlinedTextField(
+            value = uri,
+            onValueChange = { uri = it },
+            modifier = Modifier.fillMaxWidth().height(145.dp),
+            label = { Text("VLESS-ссылка") },
+            placeholder = { Text("vless://UUID@server:443?security=reality&…") },
+            minLines = 4,
+            enabled = !active
+        )
+        Text("Ссылка хранится только в зашифрованном хранилище телефона. Она не добавляется в журнал и никуда не отправляется.", color = TextMuted, fontSize = 12.sp)
+        SectionTitle("ПРИЛОЖЕНИЯ", "Через VLESS")
+        VlessAppTarget.entries.forEach { target ->
+            val installed = isInstalled(target.packageName)
+            val selected = target.packageName in selectedPackages
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable(enabled = installed && !active) {
+                    selectedPackages = if (selected) selectedPackages - target.packageName else selectedPackages + target.packageName
+                },
+                colors = CardDefaults.cardColors(containerColor = if (selected && installed) MintDark else Panel),
+                border = BorderStroke(1.dp, if (selected && installed) Mint.copy(alpha = .7f) else Line), shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Rounded.Apps, if (installed) Mint else TextMuted)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(target.title, fontWeight = FontWeight.Bold)
+                        Text(if (installed) target.packageName else "Не установлено на устройстве", color = TextMuted, fontSize = 12.sp)
+                    }
+                    Switch(
+                        checked = selected && installed,
+                        onCheckedChange = { if (installed && !active) selectedPackages = if (selected) selectedPackages - target.packageName else selectedPackages + target.packageName },
+                        enabled = installed && !active,
+                        colors = SwitchDefaults.colors(checkedThumbColor = Night, checkedTrackColor = Mint, uncheckedTrackColor = Line)
+                    )
+                }
+            }
+        }
+        Card(colors = CardDefaults.cardColors(containerColor = Panel), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(16.dp)) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Весь интернет через VLESS", fontWeight = FontWeight.Bold)
+                    Text("Выключено по умолчанию. При включении остальные приложения тоже попадут в туннель.", color = TextMuted, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+                Switch(checked = routeAll, onCheckedChange = { routeAll = it }, enabled = !active,
+                    colors = SwitchDefaults.colors(checkedThumbColor = Night, checkedTrackColor = Mint, uncheckedTrackColor = Line))
+            }
+        }
+        OutlinedButton(
+            onClick = { onSave(uri, profile()) }, enabled = uri.isNotBlank() && !active,
+            modifier = Modifier.fillMaxWidth().height(52.dp), border = BorderStroke(1.dp, Mint.copy(alpha = .7f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Mint), shape = RoundedCornerShape(14.dp)
+        ) { Icon(Icons.Rounded.CheckCircle, null); Spacer(Modifier.width(8.dp)); Text("Сохранить VLESS-профиль", fontWeight = FontWeight.Bold) }
+        Button(
+            onClick = { onSave(uri, profile()); onStart() },
+            enabled = uri.isNotBlank() && (routeAll || selectedPackages.isNotEmpty()) && !active,
+            modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(14.dp)
+        ) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Подключить VLESS", fontWeight = FontWeight.Bold) }
+        OutlinedButton(
+            onClick = onStop, enabled = active, modifier = Modifier.fillMaxWidth().height(54.dp),
+            border = BorderStroke(1.dp, if (active) Coral else Line), shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = if (active) Coral else TextMuted)
+        ) { Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(8.dp)); Text("Остановить VLESS", fontWeight = FontWeight.Bold) }
     }
 }
 

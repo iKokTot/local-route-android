@@ -25,4 +25,13 @@ class VlessProfileTest {
         assertFalse(profile.routeAllApplications)
         assertEquals(setOf("com.instagram.android"), profile.selectedPackages)
     }
+
+    @Test fun `compiled profile keeps a VLESS outbound and private traffic direct`() {
+        val endpoint = VlessUriParser.parse("vless://00000000-0000-4000-8000-000000000000@example.com:443?type=grpc&security=tls&sni=cdn.example.com&serviceName=grpc")
+        val config = VlessConfigCompiler.compile(endpoint)
+
+        assertTrue(config.contains("\"type\":\"vless\""))
+        assertTrue(config.contains("\"service_name\":\"grpc\""))
+        assertTrue(config.contains("\"ip_is_private\":true"))
+    }
 }

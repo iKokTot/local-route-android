@@ -10,3 +10,4 @@ release-signing.properties
 *.jks
 *.iml
 work/
+/app/libs/libbox.aar

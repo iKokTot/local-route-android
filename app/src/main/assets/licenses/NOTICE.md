@@ -49,6 +49,16 @@ are packaged as `hev-socks5-tunnel-MIT.txt`, `hev-task-system-MIT.txt`,
   audited WireGuard Android userspace backend; Local Route does not implement
   WireGuard cryptography or the protocol itself.
 
+## VLESS engine
+
+* **sing-box / libbox** — GPL-3.0-or-later, copyright SagerNet and
+  contributors. Source: https://github.com/SagerNet/sing-box
+  Android binding source: https://github.com/singbox-android/libbox
+  Published artifact: `libbox.aar` 1.14.0, downloaded only at build time from
+  the binding project's release, SHA-256
+  `13fbeabcb4622250762afa1b137daaba861a4dc1875643d18621339912f32330`.
+  It powers the optional VLESS mode and is not affiliated with Local Route.
+
 ## Java/Kotlin dependencies
 
 AndroidX and Jetpack Compose are consumed as normal Android libraries. Their

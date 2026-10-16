@@ -1,4 +1,6 @@
 import java.util.Properties
+import java.net.URL
+import java.security.MessageDigest
 
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
 
@@ -58,6 +60,9 @@ dependencies {
     // Official non-root WireGuard backend used only by SECURE_TUNNEL.
     implementation("com.wireguard.android:tunnel:1.0.20260102")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // Pinned GPL-3.0 Android binding of sing-box for VLESS. The AAR is fetched
+    // by prepareLibbox and verified before Gradle packages it.
+    implementation(files("libs/libbox.aar"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
@@ -97,3 +102,18 @@ tasks.register<Exec>("buildHevSocks5Tunnel") {
     args("NDK_PROJECT_PATH=build/intermediates/ndkBuild", "NDK_LIBS_OUT=src/main/jniLibs", "APP_BUILD_SCRIPT=src/main/jni/Android.mk", "NDK_APPLICATION_MK=src/main/jni/Application.mk")
 }
 tasks.named("preBuild").configure { dependsOn("buildHevSocks5Tunnel") }
+
+val prepareLibbox = tasks.register("prepareLibbox") {
+    val artifact = file("libs/libbox.aar")
+    val url = "https://github.com/singbox-android/libbox/releases/download/1.14.0/libbox.aar"
+    val expectedSha256 = "13fbeabcb4622250762afa1b137daaba861a4dc1875643d18621339912f32330"
+    outputs.file(artifact)
+    doLast {
+        artifact.parentFile.mkdirs()
+        if (!artifact.isFile) URL(url).openStream().use { input -> artifact.outputStream().use(input::copyTo) }
+        val digest = MessageDigest.getInstance("SHA-256").digest(artifact.readBytes())
+            .joinToString("") { it.toUByte().toString(16).padStart(2, '0') }
+        check(digest == expectedSha256) { "libbox.aar SHA-256 does not match the pinned release" }
+    }
+}
+tasks.named("preBuild").configure { dependsOn(prepareLibbox) }
