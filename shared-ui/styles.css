@@ -229,6 +229,8 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
 .empty-subscriptions { margin-top:16px; }
 #subscription-dialog { color:var(--on-surface); background:var(--surface-container); border:1px solid var(--outline-variant); border-radius:20px; padding:24px; max-width:min(520px,calc(100vw - 24px)); width:100%; max-height:calc(100dvh - 32px); overflow:auto; }
 #subscription-dialog::backdrop { background:#0009; }
+#confirmation-dialog { color:var(--on-surface); background:var(--surface-container); border:1px solid var(--outline-variant); border-radius:20px; padding:20px; width:min(420px,calc(100vw - 32px)); }
+#confirmation-dialog::backdrop { background:#0009; }
 #subscription-dialog .panel-heading { margin-bottom:16px; }
 .project-links { margin-top:16px; }
 .project-links .text-button { margin-right:14px; }
@@ -247,6 +249,23 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
 .platform-android #page-content { overscroll-behavior: contain; padding-top: 12px; scroll-padding-top: 12px; }
 .platform-android #toast { max-height: 80px; overflow-y: auto; font-size: 13px; line-height: 1.4; }
 .platform-android footer { display: none; }
+.platform-android .vpn-exceptions { margin: 16px 0 0; padding: 16px; border: 1px solid var(--outline-variant); border-radius: 16px; }
+.platform-android .vpn-exceptions > summary { min-height: 48px; display: flex; align-items: center; }
+.platform-android .panel-heading { margin-bottom: 16px; }
+.platform-android .page-intro { margin-bottom: 16px; }
+.platform-android .vless-actions { gap: 10px; margin-block: 16px 0; }
+.platform-android .vless-actions:has(> .hidden):not(:has(> :not(.hidden))) { display: none; }
+.platform-android .subscription-toolbar { margin-block: 16px; gap: 8px; }
+.platform-android .empty-subscriptions h3 { margin-bottom: 8px; }
+.platform-android .empty-subscriptions p { margin: 0; }
+.platform-android .setting-description { margin-block: 12px; }
+.platform-android #vless-test-results:empty { display: none; }
+.platform-android #vless-test-results:not(:empty) { margin-top: 16px; }
+.platform-android .mode-settings .column { display: flex; flex-direction: column; gap: 16px; }
+.platform-android .server-description { min-width: 0; }
+.platform-android .server-description strong, .platform-android .server-description small { overflow-wrap: anywhere; }
+.platform-android #page-content { padding-bottom: 32px; }
+.platform-android .journal-link, .platform-android .service-feedback > .text-button { display: none; }
 @media (max-width:760px) {
   .topbar { padding:10px 16px 8px; flex-wrap:nowrap; min-height:52px; }
   .topbar h1 { font-size:23px; }

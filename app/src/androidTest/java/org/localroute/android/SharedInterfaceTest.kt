@@ -15,16 +15,34 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
-    @Test fun unsavedRoutesDoNotBlockAddingConnection() {
+    @Test fun noFalseDpiSuccessAndUnsavedSettingsAskBeforeLeaving() {
+        attach()
+        js("navigate('lab')")
+        assertEquals(false, js("Boolean(document.querySelector('#android-dpi-feedback').offsetParent)"))
+        assertEquals(false, js("Boolean(document.querySelector('#test-results .empty-state').offsetParent)"))
+        js("navigate('telegram');navigate('settings');document.querySelector('#telegram-port').value='3443';document.querySelector('#telegram-port').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#back-settings').click()")
+        await("Boolean(document.querySelector('#confirmation-dialog')?.open)")
+        assertEquals("settings", js("currentPage"))
+        instrumentation.runOnMainSync { activity.onBackPressedDispatcher.onBackPressed() }
+        await("!document.querySelector('#confirmation-dialog')")
+        assertEquals(true, js("dirty('telegram')"))
+        js("document.querySelector('#back-settings').click()")
+        await("Boolean(document.querySelector('#confirmation-dialog')?.open)")
+        js("document.querySelector('#confirmation-dialog .primary').click()")
+        await("currentPage==='telegram' && !dirty('telegram')")
+        js("navigate('control')")
+    }
+    @Test fun oneConnectionFormImportsAndSelectsWithoutHiddenSave() {
         attach()
         val store = org.localroute.android.tunnel.VlessStore(instrumentation.targetContext)
         val routes = store.routes()
         val groups = store.connectionGroups()
         val selected = store.uri()
         try {
-            js("navigate('routes');navigate('settings');vlessDraft.mode=vlessDraft.mode==='all'?'selective':'all';renderEditor('vless');renderControls()")
-            assertEquals(false, js("document.querySelector('#save-vless').disabled"))
-            assertEquals(false, js("document.querySelector('#vless-uri').disabled"))
+            js("navigate('routes')")
+            assertEquals(false, js("Boolean(document.querySelector('#single-server-editor').offsetParent)"))
+            assertEquals(false, js("Boolean(document.querySelector('[data-mode-settings=routes]').offsetParent)"))
+            assertEquals(true, js("Boolean(document.querySelector('.vpn-exceptions').offsetParent)"))
             js("navigate('routes');document.querySelector('#open-subscription').click()")
             assertEquals(true, js("document.querySelector('#subscription-dialog').open"))
             assertEquals(false, js("document.querySelector('#subscription-input').disabled"))
@@ -35,10 +53,19 @@ class SharedInterfaceTest {
             await("!pending && !document.querySelector('#subscription-dialog').open && state.vlessServers.length>0")
             js("document.querySelector('.select-server:not(:disabled)').click()")
             await("!pending && state.vlessConfigured")
-            assertEquals(true, js("dirty('vless')"))
-            js("document.querySelector('#save-vless').click()")
-            await("!pending && !dirty('vless')")
-            assertEquals(!routes.allTraffic, org.localroute.android.tunnel.VlessStore(instrumentation.targetContext).routes().allTraffic)
+            assertEquals(false, js("dirty('vless')"))
+            assertEquals(false, js("document.querySelector('#toggle-vless').disabled"))
+            assertEquals(true, store.routes().allTraffic)
+            assertEquals(true, store.routes().packages.isEmpty())
+            store.saveRoutes(routes.copy(allTraffic=false, packages=setOf("com.example.old")))
+            assertEquals(true, store.routes().allTraffic)
+            assertEquals(true, store.routes().packages.isEmpty())
+            js("document.querySelector('#delete-vless').click()")
+            await("Boolean(document.querySelector('#confirmation-dialog')?.open)")
+            js("document.querySelector('#confirmation-dialog .outlined').click()")
+            await("!document.querySelector('#confirmation-dialog')")
+            assertNotNull(store.uri())
+            assertEquals(true, js("document.documentElement.scrollWidth <= window.innerWidth"))
         } finally {
             store.saveRoutes(routes)
             store.saveConnectionGroups(groups)

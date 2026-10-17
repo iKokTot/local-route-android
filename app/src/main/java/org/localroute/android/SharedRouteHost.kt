@@ -341,9 +341,10 @@ class SharedRouteHost(
                     stopVpn(); awaitStopped(vpn=true)
                 }
             }
-            return response(if(found)"Сервер выбран по ответу HTTPS; VPN включён." else "Сервер с ответом HTTPS не найден.").put("ok",found)
+            return response(if(found)"Сервер с ответом HTTPS выбран. Нажмите «Подключить»." else "Сервер с ответом HTTPS не найден.").put("ok",found)
         } finally {
-            if(!found) { stopVpn(); withContext(NonCancellable) { awaitStopped(vpn=true) }; if(previous.isBlank())servers.clearSelection() else servers.save(previous) }
+            stopVpn(); withContext(NonCancellable) { awaitStopped(vpn=true) }
+            if(!found) { if(previous.isBlank())servers.clearSelection() else servers.save(previous) }
         }
     }
 }

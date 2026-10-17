@@ -70,8 +70,27 @@ function resetDraft(kind) {
     savedTelegram = JSON.stringify(telegramDraft);
   }
 }
-function navigate(page) {
+function confirmAction(message, actionLabel = 'Продолжить') {
+  return new Promise(resolve => {
+    if (document.querySelector('#confirmation-dialog')) { resolve(false); return; }
+    const dialog = document.createElement('dialog'); dialog.id = 'confirmation-dialog';
+    const text = document.createElement('p'); text.textContent = message;
+    const actions = document.createElement('div'); actions.className = 'vless-actions';
+    for (const [label, accepted] of [['Отмена', false], [actionLabel, true]]) {
+      const button = document.createElement('button'); button.className = 'button ' + (accepted ? 'primary' : 'outlined'); button.textContent = label;
+      button.onclick = () => { dialog.returnValue = accepted ? 'yes' : ''; dialog.close(); }; actions.append(button);
+    }
+    dialog.append(text, actions); document.body.append(dialog);
+    dialog.addEventListener('close', () => { const accepted = dialog.returnValue === 'yes'; dialog.remove(); resolve(accepted); }, {once:true});
+    dialog.showModal();
+  });
+}
+async function navigate(page) {
   if (!PAGE_TITLES[page]) return;
+  if (isAndroid() && currentPage === 'settings' && page !== 'settings' && (dirty('dpi') || dirty('telegram'))) {
+    if (!await confirmAction('Есть несохранённые настройки. Выйти и отменить изменения?', 'Выйти без сохранения')) return;
+    for (const kind of ['dpi','telegram']) { resetDraft(kind); renderEditor(kind); }
+  }
   if (page === 'settings' && currentPage !== 'settings') settingsReturnPage = currentPage;
   scrollPositions[currentPage] = $('#page-content').scrollTop;
   currentPage = page;
@@ -101,7 +120,21 @@ function renderControls() {
     return;
   }
   $('#page-content').inert = false;
-  if (isAndroid()) $('#test-results').classList.toggle('hidden', Boolean(state.dpiTrial?.pendingConfirmation));
+  if (isAndroid()) {
+    const trial = Boolean(state.active && state.dpiTrial?.pendingConfirmation);
+    $('#android-dpi-feedback').classList.toggle('hidden', !trial);
+    $('#test-results').classList.toggle('hidden', trial);
+    $('#test-results').closest('section').classList.toggle('hidden', !trial && !$('#test-results .test-result'));
+    $('#test-results').closest('.service-feedback').classList.toggle('hidden', !trial && !$('#test-results .test-result'));
+    const servers = state.vlessServers || [];
+    $('#toggle-vless').classList.toggle('hidden', !state.vlessConfigured);
+    $('#test-vless').classList.toggle('hidden', !state.vlessConfigured);
+    $('#auto-server').classList.toggle('hidden', servers.length < 2);
+    $('#refresh-subscription').classList.toggle('hidden', !state.vlessSubscriptionSaved);
+    $('#delete-vless').classList.toggle('hidden', !servers.length && !state.vlessConfigured);
+    $('#single-server-editor').classList.add('hidden');
+    $('#vless-profile-hint').classList.add('hidden');
+  }
   const busy = Boolean(pending) || Boolean(state.telegramBusy) || Boolean(state.operation);
   const dpiBusy = pending?.kind === 'dpi' || ['auto','test'].includes(state.operation?.kind);
   const dpiLocked = busy || state.active;
@@ -195,6 +228,8 @@ function renderState() {
   $('#route-mode-title').textContent = allTraffic ? 'Через сервер VLESS' : 'Напрямую';
   $('#route-mode-description').textContent = state.vlessConfigured ? (allTraffic ? 'Сохранённый профиль: весь внешний трафик через сервер. Локальная сеть и TGWs — напрямую.' : 'Сохранённый профиль: только выбранные сайты и приложения через сервер. Остальные соединения — напрямую.') : 'После сохранения здесь появится описание маршрута для остального трафика.';
   if(isAndroid()) {
+    $('#toggle-vless').textContent = state.vlessActive ? 'Отключить VPN' : 'Подключить';
+    $('#vless-detail').textContent = state.vlessConfigured ? 'Весь интернет через сервер; исключения — напрямую.' : 'Добавьте подключение и выберите сервер.';
     $('#dpi-strategy-description').textContent=state.dpiTrial?.pendingConfirmation ? 'Запущен кандидат, он ещё не сохранён как рабочий. Проверьте видео и голос, затем выберите результат ниже.' : state.verifiedStrategy ? 'Профиль сохранён после вашей проверки. Можно запустить его или начать новую проверку вариантов.' : 'Профили проверяются вами по очереди: запустите вариант, откройте сервис и выберите результат ниже.';
     $('#dpi-trial-status').textContent=state.dpiTrial?.candidate ? 'Вариант '+state.dpiTrial.attempt+' из '+state.dpiTrial.total+': '+state.dpiTrial.name+'. Если не работает — нажмите следующий вариант.' : 'Здесь появятся кнопки оценки запущенного варианта. Повторный запуск сохранённого профиля сам по себе не ищет другой.';
     if(state.dpiTrial?.pendingConfirmation)status('#dpi-strategy-state','Нужна ваша проверка','waiting');
@@ -301,6 +336,26 @@ function configureAndroidSettings() {
   $('#telegram-settings-hint').textContent = 'Порт можно изменить, когда прокси выключен. Затем подключите Telegram заново.';
   $('#vless-all-note').textContent = 'Интернет идёт через ваш сервер. Выбранные DPI-сервисы обрабатываются локально; исключения — напрямую.';
   all('[data-open-log]').forEach(button => { button.dataset.page = 'settings'; button.textContent = 'Диагностика →'; });
+  // Android has one connection editor and an all-traffic model with exceptions.
+  const exceptions = groups.routes.querySelector('.bypass-app')?.closest('details');
+  if (exceptions) {
+    exceptions.classList.add('vpn-exceptions');
+    exceptions.querySelector('summary').textContent = 'Исключения VPN';
+    exceptions.querySelector('p').textContent = 'Эти приложения подключаются напрямую. Для изменения остановите VPN. Если включён DPI, он тоже не обрабатывает исключённые приложения.';
+    document.querySelector('.vless-connection-panel').after(exceptions);
+  }
+  groups.routes.classList.add('hidden');
+  $('#open-subscription').textContent = 'Добавить подключение';
+  $('#subscription-dialog h2').textContent = 'Добавить подключение';
+  document.querySelector('label[for="subscription-input"]').textContent = 'Ссылка VLESS, HTTPS-подписка или список';
+  $('#subscription-input').placeholder = 'vless://… или https://…';
+  $('#auto-server').textContent = 'Проверить серверы';
+  $('#test-vless').textContent = 'Проверить соединение';
+  document.querySelector('[data-page-panel="routes"] > .page-intro').textContent = 'Весь интернет через ваш сервер. Исключения — напрямую, включённый DPI — локально.';
+  document.querySelector('.vless-connection-panel > .info-note').classList.add('hidden');
+  $('#vless-test-results').closest('section').classList.add('hidden');
+  document.querySelector('.vless-connection-panel').append($('#vless-test-results'));
+  $('#vless-test-results').textContent = '';
 }
 
 function renderEditor(kind) {
@@ -344,7 +399,7 @@ function renderVlessReport(report) {
     return `<div class="test-result ${['ok', 'warning', 'fail'].includes(level) ? level : 'fail'}"><strong>${escapeHtml(item.label)} · ${label}</strong><span>${escapeHtml(item.detail)} · ${escapeHtml(item.durationMs)} мс</span></div>`;
   }).join('');
   const apps = report.appRules || [];
-  $('#vless-test-results').innerHTML = `<div class="vless-check-list">${rows}</div><p class="setting-description">Ответы получены через сервер VLESS. Это проверка адресов, а не полной работы сайтов или приложений.</p>${apps.length ? `<details class="advanced"><summary>Правила приложений · ${apps.length}</summary><p class="setting-description">В профиль включены ${apps.map((app) => escapeHtml(app.process)).join(', ')}. Передача их трафика этим тестом не проверялась. Если приложение использует отдельный сетевой процесс, добавьте его .exe в список.</p></details>` : ''}`;
+  $('#vless-test-results').innerHTML = `<div class="vless-check-list">${rows}</div><p class="setting-description">Это проверка соединения через сервер, а не полной работы приложений.</p>${!isAndroid() && apps.length ? `<details class="advanced"><summary>Правила приложений · ${apps.length}</summary><p class="setting-description">В профиль включены ${apps.map((app) => escapeHtml(app.process)).join(', ')}.</p></details>` : ''}`;
 }
 function renderDpiReport(report) {
   const summary = report.message ? `<p class="setting-description">${escapeHtml(report.message)}</p>` : '';
@@ -428,7 +483,10 @@ async function handleAction(button) {
     $('#app-search').value=''; renderApps(); renderControls();
   });
   if (id === 'export-diagnostics') return perform('export', 'Сохраняю диагностику без секретов…', () => window.localRoute.exportDiagnostics());
-  if (id === 'delete-vless') return perform('vless', 'Удаляю VLESS-профиль…', () => window.localRoute.deleteVless(), () => { resetDraft('vless'); renderEditor('vless'); $('#vless-test-results').textContent='Профиль удалён.'; });
+  if (id === 'delete-vless') {
+    if (isAndroid() && !await confirmAction('Удалить все подключения и подписки с этого устройства?', 'Удалить')) return;
+    return perform('vless', 'Удаляю подключение…', () => window.localRoute.deleteVless(), () => { resetDraft('vless'); renderEditor('vless'); $('#vless-test-results').textContent='Подключения удалены.'; });
+  }
   if (id === 'add-domain' || id === 'add-vless-domain') return addDomain(id === 'add-domain' ? 'dpi' : 'vless');
   if (button.dataset.domainKind) {
     const kind = button.dataset.domainKind;
