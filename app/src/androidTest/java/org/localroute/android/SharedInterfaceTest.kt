@@ -15,6 +15,14 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
+    @Test fun localRouteNameAndDistinctNavigationSurface() {
+        attach()
+        assertEquals("Local Route",instrumentation.targetContext.applicationInfo.loadLabel(instrumentation.targetContext.packageManager).toString())
+        assertEquals("Local Route",js("document.title"))
+        assertEquals(false,js("document.querySelector('#settings-version').parentElement.textContent.includes('Community')"))
+        assertEquals(true,js("getComputedStyle(document.querySelector('.sidebar')).backgroundColor!==getComputedStyle(document.querySelector('.panel')).backgroundColor"))
+        assertEquals(true,js("parseFloat(getComputedStyle(document.querySelector('.sidebar')).borderTopWidth)>0"))
+    }
     @Test fun invalidConnectionShowsSafeErrorWithoutChangingLibrary() {
         attach()
         js("navigate('routes');window.serversBefore=JSON.stringify(state.vlessServers);document.querySelector('#open-subscription').click();document.querySelector('#subscription-input').value='vless://private-key@invalid';document.querySelector('#import-subscription').click()")

@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
         }
         setContentView(sharedContainer)
         window.statusBarColor = android.graphics.Color.rgb(17,20,24)
-        window.navigationBarColor = android.graphics.Color.rgb(25,28,32)
+        window.navigationBarColor = android.graphics.Color.rgb(32,40,46)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window,false)
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(sharedContainer) { view,insets ->
             val bars=insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())

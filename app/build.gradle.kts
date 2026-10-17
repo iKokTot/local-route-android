@@ -18,8 +18,8 @@ android {
     ndkVersion = "25.1.8937393"
     defaultConfig {
         applicationId = providers.gradleProperty("applicationId").getOrElse("org.localroute.community")
-        manifestPlaceholders["applicationLabel"] = providers.gradleProperty("applicationLabel").getOrElse("Local Route Community")
-        minSdk = 26; targetSdk = 35; versionCode = 29; versionName = "0.24.5"
+        manifestPlaceholders["applicationLabel"] = providers.gradleProperty("applicationLabel").getOrElse("Local Route")
+        minSdk = 26; targetSdk = 35; versionCode = 30; versionName = "0.24.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }

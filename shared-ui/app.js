@@ -303,6 +303,9 @@ function configurePlatform() {
   const startup=document.querySelector('.autostart-panel');
   general.append(startup);
   if(!isAndroid()) return;
+  document.title='Local Route';
+  $('#settings-version').parentElement.firstChild.textContent='Local Route ';
+  document.querySelector('.brand small').textContent='Подключение без лишнего';
   general.textContent='';
   general.innerHTML='<p class="setting-description">Android запрашивает разрешение на локальный VPN при первом запуске. DPI и VPN используют один системный сервис.</p><div class="vless-actions"><button class="button outlined" data-android-tile="DPI">Плитка DPI</button><button class="button outlined" data-android-tile="TG">Плитка Telegram</button><button class="button outlined" data-android-tile="VLESS">Плитка VPN</button></div>';
   // Скрытая Windows-разметка остаётся для общего контроллера, но не входит в поток страницы.

@@ -284,6 +284,7 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
 .platform-android .component-card .route-state { max-width:120px; white-space:normal; overflow-wrap:anywhere; }
 .platform-android button, .platform-android .nav-button span { overflow-wrap:anywhere; }
 .platform-android .topbar h1 { min-width:0; }
+.platform-android .sidebar { background:#20282e; border-top:1px solid #3e4b52; box-shadow:0 -6px 20px #0004; }
 @media (max-width:760px) {
   .topbar { padding:10px 16px 8px; flex-wrap:nowrap; min-height:52px; }
   .topbar h1 { font-size:23px; }
