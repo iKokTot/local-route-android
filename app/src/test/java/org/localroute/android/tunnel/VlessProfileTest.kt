@@ -20,10 +20,12 @@ class VlessProfileTest {
         assertTrue(failure?.message.orEmpty().contains("pbk"))
     }
 
-    @Test fun `selected package mode never turns on whole device routing`() {
-        val profile = VlessRouteProfile(setOf("com.instagram.android"))
-        assertFalse(profile.routeAllApplications)
-        assertEquals(setOf("com.instagram.android"), profile.selectedPackages)
+    @Test fun `gateway requires authentication and uses the Android userspace stack`() {
+        val endpoint = VlessUriParser.parse("vless://id@example.com:443?security=none")
+        val config = VlessConfigCompiler.compile(endpoint, socksPassword = "test-password")
+        assertTrue(config.contains("\"stack\":\"gvisor\""))
+        assertTrue(config.contains("\"users\":[{\"username\":\"localroute\",\"password\":\"test-password\"}]"))
+        assertFalse(config.contains("include_package"))
     }
 
     @Test fun `compiled profile keeps a VLESS outbound and private traffic direct`() {
@@ -33,5 +35,7 @@ class VlessProfileTest {
         assertTrue(config.contains("\"type\":\"vless\""))
         assertTrue(config.contains("\"service_name\":\"grpc\""))
         assertTrue(config.contains("\"ip_is_private\":true"))
+        assertTrue(config.contains("\"auto_detect_interface\":true"))
+        assertTrue(config.contains("\"detour\":\"vless-out\""))
     }
 }

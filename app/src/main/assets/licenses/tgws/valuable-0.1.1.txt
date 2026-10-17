@@ -1,0 +1,6 @@
+valuable-0.1.1
+SPDX: MIT
+Source: https://crates.io/crates/valuable/0.1.1
+SHA256: ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65
+
+No standalone license file in crate archive; see declared SPDX license and upstream source.

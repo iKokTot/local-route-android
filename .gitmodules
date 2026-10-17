@@ -4,3 +4,6 @@
 [submodule "app/src/main/jni/hev-socks5-tunnel"]
 	path = app/src/main/jni/hev-socks5-tunnel
 	url = https://github.com/heiher/hev-socks5-tunnel.git
+[submodule "app/src/main/rust/tg-ws-proxy-rs"]
+	path = app/src/main/rust/tg-ws-proxy-rs
+	url = https://github.com/valnesfjord/tg-ws-proxy-rs.git

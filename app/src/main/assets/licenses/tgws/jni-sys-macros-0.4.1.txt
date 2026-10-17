@@ -1,0 +1,6 @@
+jni-sys-macros-0.4.1
+SPDX: MIT OR Apache-2.0
+Source: https://crates.io/crates/jni-sys-macros/0.4.1
+SHA256: 38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264
+
+No standalone license file in crate archive; see declared SPDX license and upstream source.

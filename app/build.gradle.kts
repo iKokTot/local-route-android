@@ -1,6 +1,7 @@
 import java.util.Properties
 import java.net.URL
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
 
@@ -14,7 +15,8 @@ android {
     compileSdk = 35
     // Match the toolchain used by the proven ByeDPIAndroid 1.2 build.
     ndkVersion = "25.1.8937393"
-    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 12; versionName = "0.12.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 22; versionName = "0.22.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") } }
+    sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/tgwsJniLibs"))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -57,8 +59,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.compose.material:material-icons-extended")
-    // Official non-root WireGuard backend used only by SECURE_TUNNEL.
-    implementation("com.wireguard.android:tunnel:1.0.20260102")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // Pinned GPL-3.0 Android binding of sing-box for VLESS. The AAR is fetched
     // by prepareLibbox and verified before Gradle packages it.
@@ -67,6 +67,8 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
 val prepareHevSources = tasks.register("prepareHevSources") {
@@ -117,3 +119,25 @@ val prepareLibbox = tasks.register("prepareLibbox") {
     }
 }
 tasks.named("preBuild").configure { dependsOn(prepareLibbox) }
+
+val prepareTgws = tasks.register("prepareTgws") {
+    val archive = layout.buildDirectory.file("downloads/tgws-2.5.4.apk")
+    val destination = layout.buildDirectory.dir("generated/tgwsJniLibs")
+    outputs.dir(destination)
+    doLast {
+        val apk = archive.get().asFile
+        apk.parentFile.mkdirs()
+        if (!apk.isFile) URL("https://github.com/valnesfjord/tg-ws-proxy-rs/releases/download/v2.5.4/tg-ws-proxy-rs-android-2.5.4-universal.apk").openStream().use { input -> apk.outputStream().use(input::copyTo) }
+        val digest = MessageDigest.getInstance("SHA-256").digest(apk.readBytes()).joinToString("") { it.toUByte().toString(16).padStart(2, '0') }
+        check(digest == "04e40c1cab8dca82e81749ec9829bdc5d8420a301469e84b139b9172b5524f08") { "TGWs artifact checksum mismatch" }
+        ZipFile(apk).use { zip ->
+            listOf("arm64-v8a", "armeabi-v7a", "x86_64").forEach { abi ->
+                val entry = zip.getEntry("lib/$abi/libtg_ws_proxy_jni.so") ?: error("Missing TGWs ABI: $abi")
+                val output = destination.get().file("$abi/libtg_ws_proxy_jni.so").asFile
+                output.parentFile.mkdirs()
+                zip.getInputStream(entry).use { input -> output.outputStream().use(input::copyTo) }
+            }
+        }
+    }
+}
+tasks.named("preBuild").configure { dependsOn(prepareTgws) }

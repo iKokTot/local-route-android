@@ -2,7 +2,15 @@ package org.localroute.android.tunnel
 
 /** Builds the small, audited sing-box configuration used by VlessVpnService. */
 object VlessConfigCompiler {
-    fun compile(endpoint: VlessEndpoint): String {
+    fun compile(endpoint: VlessEndpoint, bootstrapDns: String = "1.1.1.1", socksPassword: String? = null): String {
+        val gateway = socksPassword?.let {
+            ",{\"type\":\"socks\",\"tag\":\"tgws-gateway\",\"listen\":\"127.0.0.1\",\"listen_port\":1081,\"users\":[{\"username\":\"localroute\",\"password\":${quote(it)}}]}"
+        }.orEmpty()
+        return """{"log":{"level":"warn","timestamp":true},"dns":{"servers":[{"type":"https","tag":"vless-dns","server":"1.1.1.1","server_port":443,"path":"/dns-query","detour":"vless-out"},{"type":"udp","tag":"bootstrap-dns","server":${quote(bootstrapDns)}}],"final":"vless-dns"},"inbounds":[{"type":"tun","tag":"local-route-vless","address":["198.18.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"strict_route":true,"stack":"gvisor","mtu":1400}$gateway],"outbounds":[${compileOutbound(endpoint)},{"type":"direct","tag":"direct"}],"route":{"auto_detect_interface":true,"default_domain_resolver":"bootstrap-dns","rules":[{"protocol":"dns","action":"hijack-dns"},{"ip_is_private":true,"outbound":"direct"}],"final":"vless-out"}}"""
+    }
+
+
+    internal fun compileOutbound(endpoint: VlessEndpoint): String {
         val transport = when (endpoint.transport) {
             VlessTransport.TCP -> ""
             VlessTransport.WEBSOCKET -> ",\"transport\":{\"type\":\"ws\",\"path\":${quote(endpoint.path ?: "/")}" +
@@ -17,7 +25,7 @@ object VlessConfigCompiler {
             ",\"tls\":{\"enabled\":true,\"server_name\":${quote(endpoint.sni ?: endpoint.server)},\"insecure\":${endpoint.allowInsecure}$reality}"
         }
         val flow = endpoint.flow?.let { ",\"flow\":${quote(it)}" } ?: ""
-        return """{"log":{"level":"warn","timestamp":true},"inbounds":[{"type":"tun","tag":"local-route-vless","address":["198.18.0.1/30"],"auto_route":true,"strict_route":true,"stack":"mixed","mtu":1400}],"outbounds":[{"type":"vless","tag":"vless-out","server":${quote(endpoint.server)},"server_port":${endpoint.port},"uuid":${quote(endpoint.uuid)}$flow$tls$transport},{"type":"direct","tag":"direct"}],"route":{"auto_detect_interface":true,"rules":[{"protocol":"dns","action":"hijack-dns"},{"ip_is_private":true,"outbound":"direct"}],"final":"vless-out"}}"""
+        return """{"type":"vless","tag":"vless-out","server":${quote(endpoint.server)},"server_port":${endpoint.port},"uuid":${quote(endpoint.uuid)}$flow$tls$transport}"""
     }
 
     private fun quote(value: String): String = buildString {

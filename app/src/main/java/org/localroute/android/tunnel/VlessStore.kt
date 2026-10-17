@@ -15,16 +15,11 @@ class VlessStore(context: Context) {
     )
 
     fun uri(): String? = prefs.getString(KEY_URI, null)
-    fun routeProfile(): VlessRouteProfile = VlessRouteProfile(
-        prefs.getStringSet(KEY_PACKAGES, emptySet()).orEmpty(),
-        prefs.getBoolean(KEY_ALL, false)
-    )
-
-    fun save(uri: String, profile: VlessRouteProfile) {
+    fun save(uri: String) {
         prefs.edit()
             .putString(KEY_URI, uri.trim())
-            .putStringSet(KEY_PACKAGES, profile.selectedPackages)
-            .putBoolean(KEY_ALL, profile.routeAllApplications)
+            .remove(KEY_PACKAGES)
+            .remove(KEY_ALL)
             .apply()
     }
 

@@ -78,19 +78,3 @@ object VlessUriParser {
 
     private fun decode(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8.name())
 }
-
-/** Packages are opt-in. Unknown packages are never silently routed to a server. */
-enum class VlessAppTarget(val title: String, val packageName: String) {
-    TIKTOK("TikTok", "com.zhiliaoapp.musically"),
-    INSTAGRAM("Instagram", "com.instagram.android"),
-    X("X", "com.twitter.android"),
-    CHATGPT("ChatGPT", "com.openai.chatgpt"),
-    TELEGRAM("Telegram", "org.telegram.messenger")
-}
-
-data class VlessRouteProfile(
-    val selectedPackages: Set<String>,
-    val routeAllApplications: Boolean = false
-) {
-    init { require(selectedPackages.all { it.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) }) }
-}

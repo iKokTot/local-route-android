@@ -5,6 +5,8 @@ import org.localroute.android.core.ServiceTarget
 
 class ProfileStore(context: Context) {
     private val prefs = context.getSharedPreferences("local_route", Context.MODE_PRIVATE)
+    fun guideCompleted(): Boolean = prefs.getBoolean("guide_completed_v2", false)
+    fun completeGuide() = prefs.edit().putBoolean("guide_completed_v2", true).apply()
     // v2 deliberately invalidates strategies that 0.3 marked successful using
     // only an HTTPS handshake. A profile is now saved only after the user has
     // confirmed that the real target app works.
@@ -16,7 +18,6 @@ class ProfileStore(context: Context) {
     fun selectedServices(): Set<ServiceTarget> {
         val saved = prefs.getStringSet("selected_services", null) ?: return ServiceTarget.entries.toSet()
         return saved.mapNotNull { value -> ServiceTarget.entries.firstOrNull { it.name == value } }.toSet()
-            .ifEmpty { ServiceTarget.entries.toSet() }
     }
     fun saveSelectedServices(services: Set<ServiceTarget>) =
         prefs.edit().putStringSet("selected_services", services.map { it.name }.toSet()).apply()

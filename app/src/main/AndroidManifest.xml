@@ -1,9 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <queries>
+        <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
         <package android:name="com.google.android.youtube" />
         <package android:name="com.discord" />
         <package android:name="com.zhiliaoapp.musically" />
@@ -14,25 +16,26 @@
     </queries>
     <application android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:label="Local Route" android:theme="@style/Theme.LocalRoute">
-        <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
-        <service android:name=".localdpi.LocalDpiVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false" android:foregroundServiceType="specialUse">
+        <service android:name=".tunnel.CombinedVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false" android:foregroundServiceType="specialUse">
             <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Локальная обработка трафика устройства без внешнего VPN-сервера"/>
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Совместные локальные и серверные маршруты DPI/VLESS"/>
         </service>
+        <service android:name=".telegram.TelegramProxyService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Локальный MTProto WebSocket прокси для Telegram"/>
+        </service>
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
         <service android:name=".localdpi.LocalRouteTileService" android:exported="true"
-            android:icon="@drawable/ic_local_route" android:label="Local Route"
+            android:icon="@drawable/ic_tile_dpi" android:label="DPI"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
-            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true"/>
         </service>
-        <service android:name="com.wireguard.android.backend.GoBackend$VpnService" android:exported="false"
-            android:permission="android.permission.BIND_VPN_SERVICE" android:foregroundServiceType="specialUse">
-            <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Защищённый туннель к собственному серверу пользователя"/>
+        <service android:name=".shortcuts.TelegramTileService" android:exported="true"
+            android:icon="@drawable/ic_tile_tg" android:label="TG Proxy" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
         </service>
-        <service android:name=".tunnel.VlessVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false" android:foregroundServiceType="specialUse">
-            <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Выборочный VLESS-туннель для явно выбранных приложений"/>
+        <service android:name=".shortcuts.VlessTileService" android:exported="true"
+            android:icon="@drawable/ic_tile_vless" android:label="VLESS" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
         </service>
     </application>
 </manifest>

@@ -40,16 +40,13 @@ are packaged as `hev-socks5-tunnel-MIT.txt`, `hev-task-system-MIT.txt`,
 `yaml-MIT.txt` and `lwIP-BSD.txt`. ByeDPI's MIT text is packaged as
 `ByeDPI-MIT.txt`.
 
-## Secure Tunnel dependency
-
-* **WireGuard Android tunnel** — Apache-2.0, copyright WireGuard LLC.
-  Source: https://github.com/WireGuard/wireguard-android
-  Published artifact: `com.wireguard.android:tunnel:1.0.20260102`.
-  Used only for the optional non-root `SECURE_TUNNEL` mode. It provides the
-  audited WireGuard Android userspace backend; Local Route does not implement
-  WireGuard cryptography or the protocol itself.
-
 ## VLESS engine
+
+* **sing-box for Android (SFA)** — GPL-3.0-or-later, copyright (C) 2022
+  nekohasekai and contributors. The shared Android platform bridge and reload
+  lifecycle were reviewed/adapted against SFA BoxService / VPNService.
+  Source: https://github.com/SagerNet/sing-box-for-android
+  The common DPI/VLESS service remains part of the GPL-compatible Android source.
 
 * **sing-box / libbox** — GPL-3.0-or-later, copyright SagerNet and
   contributors. Source: https://github.com/SagerNet/sing-box
@@ -59,7 +56,32 @@ are packaged as `hev-socks5-tunnel-MIT.txt`, `hev-task-system-MIT.txt`,
   `13fbeabcb4622250762afa1b137daaba861a4dc1875643d18621339912f32330`.
   It powers the optional VLESS mode and is not affiliated with Local Route.
 
+## Telegram WebSocket engine
+
+* **tg-ws-proxy-rs** 2.5.4 — MIT, copyright (c) 2026 valnesfjord.
+  Rust port of **Flowseal/tg-ws-proxy** (MIT, copyright Flowseal and contributors).
+  Exact source: https://github.com/valnesfjord/tg-ws-proxy-rs/tree/a796423e561c558fcc7ff4ecfe3e5853a434ce84
+  Also pinned as `app/src/main/rust/tg-ws-proxy-rs` Git submodule.
+  Only the JNI core is included; the upstream Android UI is not included.
+  Native library extracted from the official 2.5.4 universal APK, SHA-256:
+  `04e40c1cab8dca82e81749ec9829bdc5d8420a301469e84b139b9172b5524f08`.
+  The JNI class name is retained for binary compatibility.
+* The complete upstream MIT license and notices for the pinned Cargo.lock's
+  175 registry packages are bundled under `licenses/tgws/`. This is a conservative
+  superset including host/dev dependencies. Each crate source archive was verified
+  against its Cargo.lock checksum before extracting license files.
+  Permissive license alternatives are selected where offered (MIT / Apache-2.0 /
+  ISC); Unicode-3.0, BSD and CDLA-Permissive-2.0 texts are preserved as applicable.
+  Regeneration/audit script: `scripts/audit-tgws-licenses.py`.
+
 ## Java/Kotlin dependencies
+
+Telegram mode enables tg-ws-proxy-rs `--default-domains`: community CF relay
+domain data is fetched from the Flowseal/tg-ws-proxy upstream at startup,
+with upstream's built-in fallback. This is remote configuration data, not
+downloaded executable code. Relays are third-party infrastructure, not operated
+by Local Route. Source: https://github.com/Flowseal/tg-ws-proxy
+The Telegram payload remains encrypted; relay operators can observe network metadata.
 
 AndroidX and Jetpack Compose are consumed as normal Android libraries. Their
 source is published under the Apache License 2.0, and Kotlin/coroutines are also

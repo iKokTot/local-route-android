@@ -1,0 +1,6 @@
+r-efi-5.3.0
+SPDX: MIT OR Apache-2.0 OR LGPL-2.1-or-later
+Source: https://crates.io/crates/r-efi/5.3.0
+SHA256: 69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f
+
+No standalone license file in crate archive; see declared SPDX license and upstream source.
