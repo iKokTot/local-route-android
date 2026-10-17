@@ -233,6 +233,20 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
 .project-links { margin-top:16px; }
 .project-links .text-button { margin-right:14px; }
 .platform-android .desktop-only { display:none !important; }
+.platform-android .mode-settings { margin: 12px 0; padding: 0 16px; border: 1px solid var(--outline-variant); border-radius: 16px; }
+.platform-android .mode-settings > summary { min-height: 52px; padding: 14px 0; font-weight: 600; }
+.platform-android .mode-settings .panel { padding: 16px 0; background: transparent; }
+.platform-android .mode-settings .editor-save-bar { position: static; margin-bottom: 16px; }
+.platform-android .diagnostics-settings { margin-top: 16px; }
+.platform-android .service-layout { display: flex; flex-direction: column; gap: 16px; }
+.platform-android .service-layout > div { min-width: 0; width: 100%; }
+.platform-android .service-feedback { margin: 0; }
+.platform-android .panel, .platform-android .test-result { overflow-wrap: anywhere; }
+.platform-android .button { min-height: 48px; white-space: normal; text-align: center; }
+.platform-android .topbar { position: relative; z-index: 3; background: var(--surface); }
+.platform-android #page-content { overscroll-behavior: contain; padding-top: 12px; scroll-padding-top: 12px; }
+.platform-android #toast { max-height: 80px; overflow-y: auto; font-size: 13px; line-height: 1.4; }
+.platform-android footer { display: none; }
 @media (max-width:760px) {
   .topbar { padding:10px 16px 8px; flex-wrap:nowrap; min-height:52px; }
   .topbar h1 { font-size:23px; }

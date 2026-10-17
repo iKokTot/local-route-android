@@ -85,7 +85,7 @@ class TelegramProxyService : LifecycleService() {
             for (dc in listOf(2, 4)) {
                 ensureActive()
                 if (currentGeneration != generation) return@launch
-                val result = runCatching { TelegramMtprotoProbe.check(secret, dc = dc, timeout = 22000) }
+                val result = runCatching { TelegramMtprotoProbe.check(secret, port = TelegramProxySettings(this@TelegramProxyService).port(), dc = dc, timeout = 22000) }
                 TelegramProxyRuntime.log("Проверка DC$dc ${TelegramProxySettings.routeLabel()}: " +
                     result.fold({ "ответ MTProto получен" }, { "${it.javaClass.simpleName}: ${it.message ?: "нет ответа"}" }))
                 if (result.isSuccess) {

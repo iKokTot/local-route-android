@@ -164,7 +164,7 @@ class SharedRouteHost(
             .put("dpiCommand",profile.customCommand().ifBlank { AndroidStrategies.BYEDPI_ANDROID_TCP_UDP_COMMAND })
             .put("active",dpiActive()).put("vlessActive",vpnActive()).put("vlessConfigured",!current.isNullOrBlank())
             .put("telegramActive",tgActive()).put("telegramBusy",tg.phase==TelegramProxyPhase.STARTING).put("telegramError",if(tg.phase==TelegramProxyPhase.ERROR)tg.message else "")
-            .put("telegram",JSONObject().put("port",1443).put("enabled",telegram.jointStart()))
+            .put("telegram",JSONObject().put("port",telegram.port()).put("enabled",telegram.jointStart()))
             .put("vlessServers",serverList).put("vlessSubscriptions",groups).put("vlessSubscriptionSaved",(0 until stored.length()).any { stored.getJSONObject(it).optString("source").isNotBlank() })
             .put("autoStart",false).put("operation",if(operation?.isActive==true)JSONObject().put("kind",operationName) else JSONObject.NULL)
             .put("diagnostics",diagnostic).put("logs",array(logs.takeLast(100))).put("appLibrary",appLibrary())
@@ -235,7 +235,7 @@ class SharedRouteHost(
                 } finally { if(started) { stopVpn(); withContext(NonCancellable) { awaitStopped(vpn=true) } } }
             }
             "autoSelectServer" -> return autoSelectServer()
-            "saveTelegram" -> { check(!tgActive()); require(raw.optInt("port",1443)==1443); telegram.setJointStart(raw.optBoolean("enabled")) }
+            "saveTelegram" -> { check(!tgActive()); telegram.savePort(raw.optInt("port",1443)); telegram.setJointStart(raw.optBoolean("enabled")) }
             "startTelegram" -> startTelegram()
             "stopTelegram" -> stopTelegram()
             "copyTelegram" -> copy(telegram.link())

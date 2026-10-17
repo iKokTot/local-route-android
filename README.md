@@ -1,4 +1,8 @@
-# Local Route Community 0.24.1
+# Local Route Community 0.24.2
+
+Android UI обновлён по результатам проверки на телефоне: подробности и результаты
+тестов в [docs/COMMUNITY-0.24.2-UX.md](docs/COMMUNITY-0.24.2-UX.md).
+Ниже сохранено описание архитектуры Community 0.24.1.
 
 Исправление общего интерфейса Windows и Android, 17 октября 2026 года.
 

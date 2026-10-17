@@ -5,9 +5,9 @@ import java.util.zip.ZipFile
 
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
 
+val releaseSigningFile = rootProject.file(providers.gradleProperty("releaseSigningFile").orNull ?: "release-signing.properties")
 val releaseSigningProperties = Properties().apply {
-    val propertiesFile = rootProject.file("release-signing.properties")
-    if (propertiesFile.isFile) propertiesFile.inputStream().use(::load)
+    if (releaseSigningFile.isFile) releaseSigningFile.inputStream().use(::load)
 }
 
 android {
@@ -16,7 +16,13 @@ android {
     testBuildType = providers.gradleProperty("androidTestBuildType").getOrElse("release")
     // Match the toolchain used by the proven ByeDPIAndroid 1.2 build.
     ndkVersion = "25.1.8937393"
-    defaultConfig { applicationId = "org.localroute.community"; minSdk = 26; targetSdk = 35; versionCode = 25; versionName = "0.24.1"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") } }
+    defaultConfig {
+        applicationId = providers.gradleProperty("applicationId").getOrElse("org.localroute.community")
+        manifestPlaceholders["applicationLabel"] = providers.gradleProperty("applicationLabel").getOrElse("Local Route Community")
+        minSdk = 26; targetSdk = 35; versionCode = 26; versionName = "0.24.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+    }
     sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/tgwsJniLibs"))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -31,7 +37,7 @@ android {
         create("release") {
             val storeFileValue = releaseSigningProperties.getProperty("storeFile")
             if (storeFileValue != null) {
-                storeFile = rootProject.file(storeFileValue)
+                storeFile = releaseSigningFile.parentFile.resolve(storeFileValue)
                 storePassword = releaseSigningProperties.getProperty("storePassword")
                 keyAlias = releaseSigningProperties.getProperty("keyAlias")
                 keyPassword = releaseSigningProperties.getProperty("keyPassword")

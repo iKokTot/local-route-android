@@ -82,6 +82,10 @@ function navigate(page) {
     if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   });
   $('#page-title').textContent = PAGE_TITLES[page];
+  if (isAndroid()) document.querySelector('.settings-link').classList.toggle('hidden', page === 'settings');
+  if (isAndroid() && page === 'settings') {
+    all('[data-mode-settings]').forEach(group => { group.open = group.dataset.modeSettings === settingsReturnPage; });
+  }
   $('#page-content').scrollTo({ top: scrollPositions[page] || 0, behavior: 'instant' });
 }
 function status(selector, text, level = '') {
@@ -97,6 +101,7 @@ function renderControls() {
     return;
   }
   $('#page-content').inert = false;
+  if (isAndroid()) $('#test-results').classList.toggle('hidden', Boolean(state.dpiTrial?.pendingConfirmation));
   const busy = Boolean(pending) || Boolean(state.telegramBusy) || Boolean(state.operation);
   const dpiBusy = pending?.kind === 'dpi' || ['auto','test'].includes(state.operation?.kind);
   const dpiLocked = busy || state.active;
@@ -122,7 +127,7 @@ function renderControls() {
   disable('#start-saved-dpi', busy || state.active || !state.verifiedStrategy || dirty('dpi'), 'Сначала подберите и сохраните стратегию');
   disable('[data-auto-select], .test-strategy', busy || dirty('dpi') || (!state.profile.services.length && !state.profile.customDomains.length), 'Сначала выберите YouTube или Discord и сохраните сервисы');
   disable('.stop-engine', (busy && !dpiBusy) || (!state.active && !dpiBusy), 'DPI уже остановлен');
-  disable('#telegram-port', tgLocked || isAndroid(), 'Порт Android-прокси — 1443');
+  disable('#telegram-port', tgLocked, 'Остановите прокси перед изменением порта');
   disable('#telegram-enabled', tgLocked, 'Сначала остановите Telegram-прокси');
   disable('#telegram-save', tgLocked || !dirty('telegram'), state.telegramActive ? 'Сначала остановите Telegram-прокси' : 'Нет изменений для сохранения');
   disable('#telegram-start', busy || state.telegramActive || dirty('telegram'), state.telegramActive ? 'Прокси уже запущен' : 'Сначала сохраните настройки');
@@ -199,7 +204,7 @@ function renderState() {
   $('#autostart-description').textContent = `${state.autoStart ? 'При входе в Windows запустятся' : 'При включении будут запускаться'}: ${ready.join(', ') || 'пока нет настроенных компонентов'}. Приложение останется в трее.`;
   const items = state.diagnostics || [];
   $('#diagnostics').innerHTML = items.map((item) => `<div class="diag ${['ok', 'warning', 'neutral'].includes(item.level) ? item.level : 'neutral'}"><div class="diag-label"><i></i>${escapeHtml(item.label)}</div><div class="diag-value">${escapeHtml(item.value)}</div></div>`).join('');
-  const logs = state.logs || [];
+  const logs = (state.logs || []).map(entry => String(entry).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').replace(/\[(?:\d+(?:;\d+)*)m/g, ''));
   const technical = (entry) => /\[(winws|vless|tgws)\]/.test(entry);
   const activity = logs.filter((entry) => !technical(entry) && !/(YouTube|Discord (API|Gateway|CDN|Updates)):/i.test(entry));
   $('#activity-log').innerHTML = activity.length ? activity.slice(0, 6).map((entry) => `<div class="activity-item">${escapeHtml(entry)}</div>`).join('') : '<p class="muted setting-description">Пока нет событий. Результаты запуска и проверки появятся здесь.</p>';
@@ -254,7 +259,6 @@ function configurePlatform() {
   $('#manual-vless-app').placeholder='com.example.app';
   document.querySelector('label[for="manual-vless-app"]').textContent='Другое приложение · имя пакета';
   $('#pick-vless-app').classList.add('hidden');
-  $('#telegram-port').disabled=true;
   $('#export-diagnostics').textContent='Скопировать диагностику';
   document.querySelector('.component-subtitle').textContent='Обход DPI · ByeDPI';
   document.querySelector('.telegram-layout .page-intro')?.remove();
@@ -263,6 +267,40 @@ function configurePlatform() {
   document.querySelector('#manual-vless-app').closest('details').querySelector('.setting-description').textContent='На Android правило выбирает пакет приложения. Домены DPI имеют приоритет перед правилом VPN на всё приложение.';
   const textNodes=document.createTreeWalker(document.querySelector('#page-content'),NodeFilter.SHOW_TEXT);
   while(textNodes.nextNode())textNodes.currentNode.textContent=textNodes.currentNode.textContent.replaceAll('компьютере','устройстве');
+  configureAndroidSettings();
+}
+
+function configureAndroidSettings() {
+  const settings = document.querySelector('[data-page-panel="settings"]');
+  const quick = $('#general-platform-settings');
+  quick.querySelector('p').textContent = 'Добавьте нужную кнопку в шторку Android.';
+  quick.closest('section').querySelector('h2').textContent = 'Быстрый запуск';
+  quick.closest('section').querySelector('.eyebrow').classList.add('hidden');
+  const links = settings.querySelector('.project-links');
+  const groups = {};
+  for (const [mode, title] of [['lab','DPI · сервисы и профиль'], ['routes','VPN · сайты и приложения'], ['telegram','Telegram · параметры прокси']]) {
+    const group = document.createElement('details');
+    group.className = 'advanced mode-settings'; group.dataset.modeSettings = mode;
+    const summary = document.createElement('summary'); summary.textContent = title; group.append(summary);
+    const content = document.querySelector(`[data-page-panel="${mode}"] .service-settings`);
+    if (content) group.append(content);
+    settings.insertBefore(group, links); groups[mode] = group;
+  }
+  groups.lab.append($('#android-dpi-profile'));
+  groups.routes.append(document.querySelector('.route-note'));
+  groups.routes.append(document.querySelector('#general-platform-settings > details'));
+  groups.lab.append($('#strategy-tests').closest('details'));
+  const diagnostics = document.createElement('details');
+  diagnostics.className = 'advanced diagnostics-settings';
+  const summary = document.createElement('summary'); summary.textContent = 'Диагностика и журнал'; diagnostics.append(summary);
+  diagnostics.append($('#diagnostics').closest('section'), $('#technical-log'));
+  const events = $('#activity-log');
+  events.previousElementSibling?.remove(); diagnostics.append(events);
+  settings.insertBefore(diagnostics, links);
+  $('#telegram-enabled').closest('.telegram-autostart').classList.add('hidden');
+  $('#telegram-settings-hint').textContent = 'Порт можно изменить, когда прокси выключен. Затем подключите Telegram заново.';
+  $('#vless-all-note').textContent = 'Интернет идёт через ваш сервер. Выбранные DPI-сервисы обрабатываются локально; исключения — напрямую.';
+  all('[data-open-log]').forEach(button => { button.dataset.page = 'settings'; button.textContent = 'Диагностика →'; });
 }
 
 function renderEditor(kind) {
@@ -379,7 +417,7 @@ async function handleAction(button) {
   if(id==='save-dpi-command') return perform('save','Сохраняю профиль DPI…',()=>window.localRoute.saveDpiCommand($('#dpi-command').value));
   if(id==='reject-dpi') return perform('dpi','Останавливаю неработающий вариант и запускаю следующий…',()=>window.localRoute.rejectDpi(),result=>{$('#test-results').textContent=result.message || '';});
   if(id==='confirm-dpi') return perform('save','Сохраняю подтверждение…',()=>window.localRoute.confirmDpi());
-  if (button.dataset.page) { navigate(button.dataset.page); if (button.dataset.openLog) { $('#technical-log').open=true; $('#technical-log').scrollIntoView({block:'start',behavior:'instant'}); } return; }
+  if (button.dataset.page) { navigate(button.dataset.page); if (button.dataset.openLog) { const group = document.querySelector('.diagnostics-settings'); if (group) group.open = true; $('#technical-log').open=true; $('#technical-log').scrollIntoView({block:'start',behavior:'instant'}); } return; }
   if (!state) return;
   if (button.dataset.resetKind) { const kind=button.dataset.resetKind; resetDraft(kind); renderEditor(kind); return; }
   if (id === 'auto-server') return perform('vless','Проверяю серверы по HTTPS…',()=>window.localRoute.autoSelectServer(),()=>{resetDraft('vless');renderEditor('vless');});

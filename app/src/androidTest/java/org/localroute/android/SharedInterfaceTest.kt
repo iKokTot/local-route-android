@@ -15,6 +15,31 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
+    @Test fun compactAndroidSettingsAndEditablePortPersist() {
+        attach()
+        assertEquals(true, js("document.querySelector('#diagnostics').closest('[data-page-panel]').dataset.pagePanel==='settings'"))
+        assertEquals(false, js("Boolean(document.querySelector('[data-page-panel=control] #technical-log'))"))
+        js("navigate('lab')")
+        assertEquals(false, js("Boolean(document.querySelector('[data-page-panel=lab] #service-list'))"))
+        js("navigate('settings')")
+        assertEquals(true, js("document.querySelector('[data-mode-settings=lab]').open"))
+        assertEquals(false, js("document.querySelector('[data-mode-settings=routes]').open"))
+        js("navigate('telegram');navigate('settings')")
+        assertEquals(false, js("document.querySelector('#telegram-port').disabled"))
+        assertEquals(false, js("Boolean(document.querySelector('.telegram-autostart').offsetParent)"))
+        val preferences = org.localroute.android.telegram.TelegramProxySettings(instrumentation.targetContext)
+        val old = preferences.port()
+        try {
+            js("document.querySelector('#telegram-port').value='2443';document.querySelector('#telegram-port').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#telegram-save').click()")
+            await("!pending && state.telegram.port===2443")
+            assertEquals(2443, org.localroute.android.telegram.TelegramProxySettings(instrumentation.targetContext).port())
+            assertTrue(preferences.link().contains("port=2443&"))
+            assertTrue(preferences.arguments().contains("--port 2443 "))
+            assertTrue(runCatching { preferences.savePort(1080) }.isFailure)
+            assertTrue(runCatching { preferences.savePort(65536) }.isFailure)
+            assertEquals(true, js("document.documentElement.scrollWidth <= window.innerWidth"))
+        } finally { preferences.savePort(old) }
+    }
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private lateinit var activity: MainActivity
     private lateinit var web: WebView

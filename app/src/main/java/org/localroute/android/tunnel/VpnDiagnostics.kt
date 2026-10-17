@@ -10,6 +10,7 @@ object VpnDiagnostics {
     private val mutable = MutableStateFlow<List<String>>(emptyList())
     val lines = mutable.asStateFlow()
     fun redact(text: String): String = text
+        .replace(Regex("\\u001B\\[[0-?]*[ -/]*[@-~]"), "")
         .replace(Regex("vless://[^\\s]+", RegexOption.IGNORE_CASE), "[ссылка скрыта]")
         .replace(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"), "[ключ скрыт]")
         .replace(Regex("socks5://[^@\\s]+@"), "socks5://[ключ скрыт]@")
@@ -29,7 +30,7 @@ object VpnDiagnostics {
             while (logs?.hasNext() == true) {
                 val line = logs.next().message
                 // Debug builds also expose connection destinations: keep only failures.
-                if (Regex("error|warn|failed|timeout|unreachable|refused", RegexOption.IGNORE_CASE).containsMatchIn(line)) add(line)
+                if (Regex("\\b(error|warn|failed|timeout|unreachable|refused)\\b", RegexOption.IGNORE_CASE).containsMatchIn(redact(line))) add(line)
             }
         }
     }

@@ -12,7 +12,13 @@ class TelegramProxySettings(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
     fun secret(): String = prefs.getString("secret", null) ?: ByteArray(16).also { SecureRandom().nextBytes(it) }
         .joinToString("") { "%02x".format(it.toInt() and 255) }.also { prefs.edit().putString("secret", it).commit() }
-    fun link() = "tg://proxy?server=127.0.0.1&port=1443&secret=dd${secret()}"
+    fun port(): Int = prefs.getInt("port", 1443)
+    fun savePort(value: Int) {
+        require(value in 1024..65535) { "Порт должен быть от 1024 до 65535" }
+        require(value !in setOf(1080, 1081)) { "Этот порт используется DPI/VPN" }
+        check(prefs.edit().putInt("port", value).commit())
+    }
+    fun link() = "tg://proxy?server=127.0.0.1&port=${port()}&secret=dd${secret()}"
     fun jointStart(): Boolean = prefs.getBoolean("joint_start", false)
     fun setJointStart(value: Boolean) = prefs.edit().putBoolean("joint_start", value).apply()
     companion object {
@@ -23,7 +29,7 @@ class TelegramProxySettings(context: Context) {
     fun arguments(): String {
         val gateway = outboundProxy()
         // Explicit upstream CF list: same fallback family observed on desktop, with UI disclosure.
-        return "--host 127.0.0.1 --link-ip 127.0.0.1 --port 1443 --secret ${secret()} --default-domains --pool-size 1 --buf-kb 64 --ws-connect-timeout 8 --tcp-fallback-timeout 8 --no-outbound-proxy" +
+        return "--host 127.0.0.1 --link-ip 127.0.0.1 --port ${port()} --secret ${secret()} --default-domains --pool-size 1 --buf-kb 64 --ws-connect-timeout 8 --tcp-fallback-timeout 8 --no-outbound-proxy" +
             (gateway?.let { " --outbound-proxy $it" } ?: "")
     }
 }
