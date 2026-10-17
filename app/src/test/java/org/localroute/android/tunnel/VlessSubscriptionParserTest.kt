@@ -22,4 +22,12 @@ class VlessSubscriptionParserTest {
         assertEquals(2, profiles.size)
         assertTrue(profiles.all { it.link.startsWith("vless://") })
     }
+    @Test fun respectsLimitAndDecodesNames() {
+        assertEquals(1, VlessSubscriptionParser.parse("$first\n$second", 1).size)
+        assertEquals("Hello world", VlessSubscriptionParser.parse(first.substringBefore('#') + "#Hello%20world").single().name)
+        assertTrue(VlessSubscriptionParser.parse("<html>not a subscription</html>").isEmpty())
+    }
+    @Test(expected = IllegalArgumentException::class) fun rejectsOversizedInput() {
+        VlessSubscriptionParser.parse("x".repeat(512_001))
+    }
 }

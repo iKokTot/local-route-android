@@ -15,7 +15,7 @@ android {
     compileSdk = 35
     // Match the toolchain used by the proven ByeDPIAndroid 1.2 build.
     ndkVersion = "25.1.8937393"
-    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 22; versionName = "0.22.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") } }
+    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 23; versionName = "0.23.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") } }
     sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/tgwsJniLibs"))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

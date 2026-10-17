@@ -15,9 +15,26 @@ class VlessStore(context: Context) {
     )
 
     fun uri(): String? = prefs.getString(KEY_URI, null)
+    fun profiles(): List<VlessProfile> = VlessSubscriptionParser.parse(prefs.getString("profiles_v1", "").orEmpty()).ifEmpty {
+        uri()?.let { runCatching { listOf(VlessProfile(it, VlessUriParser.parse(it))) }.getOrNull() }.orEmpty()
+    }
+    fun source(): String = prefs.getString("source_v1", "").orEmpty()
+    fun importProfiles(profiles: List<VlessProfile>, source: String = "") {
+        require(profiles.isNotEmpty())
+        prefs.edit().putString("profiles_v1", profiles.joinToString("\n") { it.link })
+            .putString("source_v1", source).commit()
+    }
+    fun remove(link: String) {
+        val remaining = profiles().filterNot { it.link == link }
+        prefs.edit().putString("profiles_v1", remaining.joinToString("\n") { it.link }).apply()
+    }
     fun save(uri: String) {
+        val valid = runCatching { VlessUriParser.parse(uri) }.isSuccess
+        val links = profiles().map { it.link }.toMutableList()
+        if (valid && uri.trim() !in links) links.add(uri.trim())
         prefs.edit()
             .putString(KEY_URI, uri.trim())
+            .putString("profiles_v1", links.takeLast(64).joinToString("\n"))
             .remove(KEY_PACKAGES)
             .remove(KEY_ALL)
             .apply()

@@ -11,6 +11,53 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class InterfaceTest {
+    @Test fun failedAutoSelectionRestoresPreviousProfile() {
+        val store = org.localroute.android.tunnel.VlessStore(context)
+        val previous = store.uri().orEmpty()
+        val old = store.profiles(); val source = store.source()
+        val candidate = "vless://00000000-0000-4000-8000-000000000000@10.0.2.2:18443?security=none#Fixture"
+        try {
+            store.importProfiles(org.localroute.android.tunnel.VlessSubscriptionParser.parse(candidate))
+            context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            click("Сервер"); click("Настроить")
+            clickScrolled("Подобрать и подключить")
+            repeat(5) {
+                SystemClock.sleep(300)
+                for (label in listOf("Allow", "Разрешить", "OK", "ОК")) {
+                    if (find(instrumentation.uiAutomation.rootInActiveWindow, label) != null) click(label)
+                }
+            }
+            // The fixture deliberately refuses example.com:443: an open gateway must not pass.
+            val deadline = SystemClock.uptimeMillis() + 45000
+            while (SystemClock.uptimeMillis() < deadline && (store.uri() != previous || org.localroute.android.tunnel.VlessRuntime.state.value.state == org.localroute.android.tunnel.TunnelState.Connected)) SystemClock.sleep(200)
+            repeat(8) { scrollNode(instrumentation.uiAutomation.rootInActiveWindow)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD); SystemClock.sleep(100) }
+            awaitText("Сервер с ответом HTTPS не найден. Проверьте подписку или попробуйте другую сеть.")
+            assertEquals(previous, store.uri())
+        } finally {
+            context.startService(Intent(context, org.localroute.android.tunnel.CombinedVpnService::class.java).setAction(org.localroute.android.tunnel.CombinedVpnService.STOP_SERVER))
+            if (old.isNotEmpty()) store.importProfiles(old, source)
+            store.save(previous)
+        }
+    }
+    @Test fun serverSettingsShowSavedProfilesAndKeepExclusions() {
+        val store = org.localroute.android.tunnel.VlessStore(context)
+        val link = "vless://id@example.com:443?security=tls#SavedServer"
+        val old = store.profiles(); val source = store.source(); val selected = store.uri().orEmpty()
+        try {
+            store.importProfiles(org.localroute.android.tunnel.VlessSubscriptionParser.parse(link))
+            context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            click("Сервер"); click("Настроить")
+            clickScrolled("Мои подключения")
+            clickScrolled("SavedServer")
+            clickScrolled("Выбрать")
+            assertEquals(link, store.uri())
+            clickScrolled("Настроить исключения")
+            awaitText("Приложения без VPN"); click("Отмена")
+        } finally {
+            if (old.isNotEmpty()) store.importProfiles(old, source)
+            store.save(selected)
+        }
+    }
     @Test fun settingsFollowCurrentModeAndKeepCommunityPanel() {
         context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         for ((tab, title) in listOf("DPI" to "Настройки DPI", "Telegram" to "Настройки TG", "Сервер" to "Настройки VLESS")) {

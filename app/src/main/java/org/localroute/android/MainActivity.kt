@@ -429,7 +429,7 @@ private fun LocalRouteApp(
                         if (engine.phase == EnginePhase.ACTIVE) {
                             if (selected.isEmpty()) onStop() else onStart(selected, AndroidStrategies.resolve(store.lastSuccessfulStrategy(), store.customCommand()) ?: AndroidStrategies.all.first())
                         }
-                    }, onAddTile, { tab = 0; dpiChecks = true }, { guideStep = 0; settingsOpen = false; showGuide = true }, settingsSection, { settingsSection = it })
+                    }, onAddTile, { tab = 0; dpiChecks = true }, { guideStep = 0; settingsOpen = false; showGuide = true }, settingsSection, { settingsSection = it }, onStartVless, onStopVless)
             } else if (!dpiChecks) {
                 ModeHomeScreen(tab, currentActive, applying, dpiActive, serverActive, engine.message,
                     serverOverview, telegramOverview, selected, serverDraft.isNotBlank(), { openModeSettings() }, onTelegramConnect, onTelegramCheck)

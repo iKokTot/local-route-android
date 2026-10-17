@@ -14,6 +14,9 @@ import org.localroute.android.core.ServiceTarget
 import org.localroute.android.shortcuts.ShortcutMode
 import org.localroute.android.telegram.*
 import org.localroute.android.tunnel.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 @Composable
 internal fun ModeHomeScreen(tab: Int, active: Boolean, applying: Boolean, dpi: Boolean, server: Boolean,
@@ -40,6 +43,9 @@ internal fun ModeHomeScreen(tab: Int, active: Boolean, applying: Boolean, dpi: B
             if (dpiMessage.contains("ошиб", true) || dpiMessage.contains("не удалось", true)) Text("Не удалось применить маршрут. Подробности — в настройках → диагностика.", color = MaterialTheme.colorScheme.error)
         }
         if (tab == 2) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val name = runCatching { VlessStore(context).uri()?.let { VlessProfile(it, VlessUriParser.parse(it)).name } }.getOrNull()
+            if (name != null) Text("Выбрано: $name", style = MaterialTheme.typography.titleMedium)
             OutlinedButton(onClick = settings, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (hasLink) "Настроить подключение" else "Добавить ссылку") }
             if (vless.state is TunnelState.Error || vless.state is TunnelState.InvalidConfig) Text("Проверьте ссылку. Подробности — в настройках → диагностика.", color = MaterialTheme.colorScheme.error)
         }
@@ -55,12 +61,17 @@ internal fun ModeHomeScreen(tab: Int, active: Boolean, applying: Boolean, dpi: B
 @Composable
 internal fun RouteSettingsScreen(uri: String, changeUri: (String) -> Unit, saveUri: (String) -> Boolean, serverActive: Boolean,
     selected: Set<ServiceTarget>, toggle: (ServiceTarget) -> Unit, addTile: (ShortcutMode) -> Unit, profile: () -> Unit, guide: () -> Unit,
-    section: String, changeSection: (String) -> Unit) {
+    section: String, changeSection: (String) -> Unit, startServer: () -> Unit, stopServer: () -> Unit) {
     var showLink by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
-    var subscription by remember { mutableStateOf("") }
-    var subscriptionProfiles by remember { mutableStateOf(emptyList<VlessProfile>()) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val connectionStore = remember { VlessStore(context) }
+    val scope = rememberCoroutineScope()
+    var subscription by remember { mutableStateOf(connectionStore.source()) }
+    var subscriptionProfiles by remember { mutableStateOf(connectionStore.profiles()) }
     var subscriptionError by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("") }
     androidx.activity.compose.BackHandler(enabled = section.isNotBlank()) { changeSection("") }
     val tg by TelegramProxyRuntime.state.collectAsState()
     var tgLog by remember { mutableStateOf(false) }
@@ -74,29 +85,93 @@ internal fun RouteSettingsScreen(uri: String, changeUri: (String) -> Unit, saveU
         } else {
         TextButton(onClick = { changeSection("") }) { Text("Все настройки") }
         Text(section, style = MaterialTheme.typography.titleLarge)
+        if (loading) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            TextButton(onClick = { scope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach { it.cancel() } }) { Text("Отменить проверку / загрузку") }
+        }
         when (section) {
         "Настройки VLESS" -> {
         OutlinedTextField(uri, { changeUri(it); saved = false }, label = { Text("VLESS-ссылка") }, minLines = 2, maxLines = 4,
-            enabled = !serverActive, visualTransformation = if (showLink) VisualTransformation.None else PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+            enabled = !serverActive && !loading, visualTransformation = if (showLink) VisualTransformation.None else PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = { showLink = !showLink }) { Text(if (showLink) "Скрыть ссылку" else "Показать ссылку") }
-            OutlinedButton(onClick = { saved = saveUri(uri) }, enabled = !serverActive && uri.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (saved) "Сохранено" else "Сохранить ссылку") }
+            OutlinedButton(onClick = { saved = saveUri(uri); subscriptionProfiles = connectionStore.profiles() }, enabled = !serverActive && !loading && uri.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (saved) "Сохранено" else "Сохранить ссылку") }
         }
         if (serverActive) Text("Чтобы изменить ссылку, выключите серверный режим.", style = MaterialTheme.typography.bodySmall)
-        Text("Список серверов", style = MaterialTheme.typography.titleMedium)
-        Text("Вставьте обычный список vless:// по строкам или Base64. Данные разбираются на телефоне.", style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(subscription, { subscription = it; subscriptionError = null }, label = { Text("Ссылка или список серверов") }, minLines = 2, maxLines = 4, enabled = !serverActive, modifier = Modifier.fillMaxWidth())
+        Text("Мои подключения", style = MaterialTheme.typography.titleMedium)
+        Text("Добавьте HTTPS-ссылку на подписку или вставьте список VLESS. Выберите сервер — он сохранится для следующего запуска.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(subscription, { subscription = it; subscriptionError = null }, label = { Text("Подписка или список серверов") }, minLines = 2, maxLines = 4, enabled = !serverActive && !loading, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
         OutlinedButton(onClick = {
-            runCatching { VlessSubscriptionParser.parse(subscription).also { subscriptionProfiles = it } }
-                .onFailure { subscriptionError = it.message ?: "Не удалось прочитать список" }
-        }, enabled = !serverActive && subscription.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Разобрать список") }
+            scope.launch {
+                loading = true; subscriptionError = null; status = ""
+                val input = subscription.trim()
+                try {
+                    val profiles = withContext(Dispatchers.IO) {
+                        if (input.startsWith("https://")) SubscriptionLoader.load(input)
+                        else VlessSubscriptionParser.parse(input).also { require(it.isNotEmpty()) }
+                    }
+                    connectionStore.importProfiles(profiles, if (input.startsWith("https://")) input else "")
+                    subscriptionProfiles = profiles
+                    status = "Сохранено серверов: ${profiles.size}. Выберите подключение ниже."
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) { subscriptionError = "Не удалось обновить список. Проверьте ссылку и сеть. Сохранённые подключения доступны ниже." }
+                finally { loading = false }
+            }
+        }, enabled = !serverActive && !loading && subscription.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (loading) "Загружаем…" else "Добавить / обновить список") }
+        if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
         subscriptionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         subscriptionProfiles.forEach { profile ->
-            OutlinedButton(onClick = { changeUri(profile.link); saved = false }, enabled = !serverActive, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("${profile.name} · ${profile.endpoint.server}:${profile.endpoint.port}", maxLines = 1)
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
+                Text(profile.name, style = MaterialTheme.typography.titleMedium)
+                Text("${profile.endpoint.server}:${profile.endpoint.port} · ${profile.endpoint.transport.wireName}", style = MaterialTheme.typography.bodySmall)
+                Row {
+                    TextButton(onClick = { if (saveUri(profile.link)) { changeUri(profile.link); saved = true } }, enabled = !serverActive && !loading) {
+                        Text(if (uri == profile.link) "Выбран" else "Выбрать")
+                    }
+                    TextButton(onClick = { connectionStore.remove(profile.link); subscriptionProfiles = connectionStore.profiles() }, enabled = !serverActive && !loading && uri != profile.link) { Text("Удалить") }
+                }
+            }
             }
         }
+        OutlinedButton(onClick = { scope.launch {
+            loading = true
+            val previous = connectionStore.uri().orEmpty()
+            var found = false
+            try {
+                val candidates = subscriptionProfiles.sortedBy { if (it.link == previous) 0 else 1 }
+                val deadline = android.os.SystemClock.elapsedRealtime() + 120_000
+                for ((index, candidate) in candidates.withIndex()) {
+                    if (android.os.SystemClock.elapsedRealtime() >= deadline) break
+                    status = "Проверяем ${index + 1} из ${candidates.size}: ${candidate.name}"
+                    if (!saveUri(candidate.link)) continue
+                    changeUri(candidate.link)
+                    startServer()
+                    val started = kotlinx.coroutines.withTimeoutOrNull(15_000) {
+                        while (VlessRuntime.state.value.state == TunnelState.Disconnected || VlessRuntime.state.value.state == TunnelState.Connecting) kotlinx.coroutines.delay(200)
+                        VlessRuntime.state.value.state == TunnelState.Connected
+                    } == true
+                    if (started && withContext(Dispatchers.IO) { runCatching { ServerConnectionProbe.check() }.getOrDefault(false) }) {
+                        found = true; status = "Рабочее подключение: ${candidate.name}. HTTPS-сайт ответил."; break
+                    }
+                    stopServer()
+                    kotlinx.coroutines.withTimeoutOrNull(10_000) {
+                        while (VlessRuntime.state.value.state == TunnelState.Connected) kotlinx.coroutines.delay(200)
+                    }
+                }
+                if (!found) status = "Сервер с ответом HTTPS не найден. Проверьте подписку или попробуйте другую сеть."
+            } finally {
+                if (!found) { stopServer(); connectionStore.save(previous); changeUri(previous) }
+                loading = false
+            }
+        } }, enabled = !serverActive && !loading && subscriptionProfiles.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Подобрать и подключить") }
         VpnExclusionsCard()
+        OutlinedButton(onClick = { scope.launch {
+            loading = true
+            try {
+                val ok = withContext(Dispatchers.IO) { runCatching { ServerConnectionProbe.check() }.getOrDefault(false) }
+                status = if (ok) "HTTPS через сервер работает. Это проверка одного сайта." else "Нет ответа через сервер. Проверьте подключение или выберите другой сервер."
+            } finally { loading = false }
+        } }, enabled = serverActive && !loading, modifier = Modifier.fillMaxWidth()) { Text("Проверить подключение") }
         OutlinedButton(onClick = { addTile(ShortcutMode.VLESS) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Добавить плитку VLESS") }
         VpnDiagnosticsCard()
         }
