@@ -44,7 +44,7 @@ function toast(message) {
   clearTimeout(toastTimer);
   $('#toast').textContent = message;
   $('#toast').classList.add('show');
-  toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 6500);
+  toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 4500);
 }
 function showError(message) {
   const changed = $('#app-error').textContent !== message;
@@ -84,6 +84,24 @@ function confirmAction(message, actionLabel = 'Продолжить') {
     dialog.addEventListener('close', () => { const accepted = dialog.returnValue === 'yes'; dialog.remove(); resolve(accepted); }, {once:true});
     dialog.showModal();
   });
+}
+function showGuide() {
+  if (document.querySelector('#guide-dialog')) return;
+  if(dirty('dpi') || dirty('telegram')) { toast('Сначала сохраните или сбросьте изменения в настройках.'); return; }
+  const steps = [
+    ['VPN — интернет через ваш сервер', 'Откройте вкладку VPN и нажмите «Добавить подключение». Вставьте VLESS-ссылку или HTTPS-подписку от владельца сервера. Само приложение бесплатно и без рекламы, но бесплатные серверы не выдаёт. После добавления выберите сервер и нажмите «Подключить».', 'routes'],
+    ['DPI — YouTube и Discord без сервера', 'На вкладке DPI запустите проверку профилей. Откройте видео или голосовой чат и вернитесь: подтвердите рабочий вариант или попробуйте следующий. Результат зависит от вашей сети. DPI и VPN можно включать вместе.', 'lab'],
+    ['Telegram — отдельное подключение', 'На вкладке Telegram запустите прокси, затем нажмите «Подключить Telegram» и подтвердите его в Telegram. «Прокси готов» означает запуск на телефоне, а не проверку сообщений. Откройте чат и проверьте загрузку.', 'telegram'],
+    ['Управление и исключения', 'Обзор показывает включённые режимы. Каждый можно остановить отдельно. В VPN весь интернет идёт через сервер, исключения — напрямую. При совместном DPI/VPN исключённые приложения обходят оба механизма. Быстрые кнопки шторки и эта инструкция доступны в настройках.', 'control']
+  ];
+  const dialog=document.createElement('dialog'); dialog.id='guide-dialog';
+  dialog.innerHTML='<p class="eyebrow" id="guide-step"></p><h2 id="guide-title"></h2><p id="guide-text"></p><div class="vless-actions"><button class="button outlined" id="guide-back">Назад</button><button class="button primary" id="guide-next">Далее</button></div><button class="text-button" id="guide-later">Позже</button>';
+  document.body.append(dialog); let index=0;
+  const render=()=>{ $('#guide-step').textContent=`Знакомство · ${index+1} из ${steps.length}`; $('#guide-title').textContent=steps[index][0]; $('#guide-text').textContent=steps[index][1]; $('#guide-back').disabled=index===0; $('#guide-next').textContent=index===steps.length-1?'Начать':'Далее'; navigate(steps[index][2]); dialog.scrollTop=0; };
+  $('#guide-next').onclick=()=>{if(index===steps.length-1)dialog.close();else{index++;render();}};
+  $('#guide-back').onclick=()=>{index--;render();}; $('#guide-later').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>{dialog.remove();window.localRoute.completeGuide().then(result=>{if(result.ok!==false)state.guideCompleted=true;}).catch(()=>{});},{once:true});
+  render();dialog.showModal();
 }
 async function navigate(page) {
   if (!PAGE_TITLES[page]) return;
@@ -134,6 +152,8 @@ function renderControls() {
     $('#delete-vless').classList.toggle('hidden', !servers.length && !state.vlessConfigured);
     $('#single-server-editor').classList.add('hidden');
     $('#vless-profile-hint').classList.add('hidden');
+    $('#open-subscription').classList.toggle('primary',!state.vlessConfigured);
+    $('#open-subscription').classList.toggle('outlined',Boolean(state.vlessConfigured));
   }
   const busy = Boolean(pending) || Boolean(state.telegramBusy) || Boolean(state.operation);
   const dpiBusy = pending?.kind === 'dpi' || ['auto','test'].includes(state.operation?.kind);
@@ -155,17 +175,18 @@ function renderControls() {
   disable('#vless-uri, #vless-mode, .vless-service, .vless-app, #vless-custom-domain, #add-vless-domain, #vless-custom-domains button, #manual-vless-app, #add-vless-app', vlessLocked, 'Сначала остановите VLESS');
   disable('#save-vless', vlessLocked || !dirty('vless'), state.vlessActive ? 'Сначала остановите VLESS' : 'Нет изменений для сохранения');
   disable('#test-vless', busy || !state.vlessConfigured || dirty('vless'), 'Сначала сохраните профиль');
-  disable('#start-vless, #toggle-vless', busy || (!state.vlessActive && (!state.vlessConfigured || dirty('vless'))), 'Сначала сохраните профиль VLESS');
-  disable('#start-dpi', busy || (!state.active && (!state.verifiedStrategy || dirty('dpi'))), 'Подберите стратегию на вкладке «YouTube и Discord»');
+  disable('#start-vless, #toggle-vless', state.vlessActive ? pending?.kind==='stop' : busy || !state.vlessConfigured || dirty('vless'), 'Добавьте и выберите сервер; для редактирования остановите VPN');
+  disable('#start-dpi', state.active ? pending?.kind==='stop' : busy || !state.verifiedStrategy || dirty('dpi'), 'Сначала проверьте и сохраните профиль DPI');
   disable('#start-saved-dpi', busy || state.active || !state.verifiedStrategy || dirty('dpi'), 'Сначала подберите и сохраните стратегию');
   disable('[data-auto-select], .test-strategy', busy || dirty('dpi') || (!state.profile.services.length && !state.profile.customDomains.length), 'Сначала выберите YouTube или Discord и сохраните сервисы');
-  disable('.stop-engine', (busy && !dpiBusy) || (!state.active && !dpiBusy), 'DPI уже остановлен');
+  disable('.stop-engine', pending?.kind==='stop' || (!state.active && !dpiBusy), 'DPI уже остановлен');
   disable('#telegram-port', tgLocked, 'Остановите прокси перед изменением порта');
   disable('#telegram-enabled', tgLocked, 'Сначала остановите Telegram-прокси');
   disable('#telegram-save', tgLocked || !dirty('telegram'), state.telegramActive ? 'Сначала остановите Telegram-прокси' : 'Нет изменений для сохранения');
   disable('#telegram-start', busy || state.telegramActive || dirty('telegram'), state.telegramActive ? 'Прокси уже запущен' : 'Сначала сохраните настройки');
-  disable('#start-telegram', busy || (!state.telegramActive && dirty('telegram')), 'Сначала сохраните настройки Telegram');
-  disable('#telegram-stop, #telegram-connect, #telegram-copy', busy || !state.telegramActive, 'Сначала запустите прокси');
+  disable('#start-telegram', state.telegramActive ? pending?.kind==='stop' : busy || dirty('telegram'), 'Сначала сохраните настройки Telegram');
+  disable('#telegram-stop', pending?.kind==='stop' || !state.telegramActive, 'Прокси уже остановлен');
+  disable('#telegram-connect, #telegram-copy', busy || !state.telegramActive, 'Сначала запустите прокси');
   const canStart = (!state.active && state.verifiedStrategy) || (!state.vlessActive && state.vlessConfigured) || (!state.telegramActive && state.telegram?.enabled);
   disable('#start-all', busy || !canStart || dirty('dpi') || dirty('vless') || dirty('telegram'), 'Сначала настройте компоненты и сохраните изменения');
   const canStop = state.active || state.vlessActive || state.telegramActive || Boolean(pending) || Boolean(state.operation);
@@ -178,16 +199,18 @@ function renderControls() {
   $('#vless-save-status').textContent = dirty('vless') ? 'Есть несохранённые изменения. Сохраните профиль перед запуском.' : (state.vlessConfigured ? 'Профиль сохранён' : 'Добавьте VLESS-ссылку и сохраните профиль.');
   $('#telegram-save-status').textContent = dirty('telegram') ? 'Есть несохранённые изменения' : 'Изменения сохранены';
   $('#vless-edit-hint').classList.toggle('hidden', !state.vlessActive);
-  $('#telegram-settings-hint').textContent = state.telegramActive ? 'Чтобы изменить настройки, остановите прокси.' : 'Порт и совместный запуск сохраняются кнопкой ниже.';
+  $('#telegram-settings-hint').textContent = state.telegramActive ? 'Чтобы изменить порт, остановите прокси.' : 'После изменения порта сохраните его и подключите Telegram заново.';
   $('#start-dpi').textContent = state.active ? 'Остановить DPI' : 'Запустить DPI';
-  $('#start-vless').textContent = state.vlessActive ? 'Остановить VPN' : 'Запустить VPN';
-  $('#toggle-vless').textContent = state.vlessActive ? 'Остановить VPN' : 'Запустить VPN';
+  $('#start-vless').textContent = state.vlessActive ? 'Отключить VPN' : 'Подключить VPN';
+  $('#toggle-vless').textContent = state.vlessActive ? 'Отключить VPN' : 'Подключить';
   $('#start-telegram').textContent = state.telegramActive ? 'Остановить прокси' : 'Запустить прокси';
   const step = state.operation?.progress;
   const message = step ? step.message || step.label || 'Стратегия ' + step.index + ' из ' + step.total + ': ' + strategyLabel(step.strategy) : (pending?.message || (state.operation ? 'Выполняется операция…' : state.telegramBusy ? 'Telegram-прокси запускается…' : ''));
   const progress = $('#global-progress');
   const operation = pending || state.operation || (state.telegramBusy ? 'telegram-starting' : null);
   progress.querySelector('span').textContent = message;
+  const cancel=$('#cancel-operation'); if(cancel){cancel.classList.toggle('hidden',!busy || pending?.kind==='stop');cancel.disabled=pending?.kind==='stop';}
+  const editHint=$('#connection-edit-hint'); if(editHint){editHint.textContent=state.vlessActive?'Для изменения подключения или исключений сначала отключите VPN.':'';editHint.classList.toggle('hidden',!state.vlessActive);}
   progress.title = message;
   if (operation !== progressOperation) {
     clearTimeout(progressTimer);
@@ -216,7 +239,7 @@ function renderState() {
   const tgLevel = state.telegramBusy ? 'waiting' : (state.telegramActive ? 'active' : (state.telegramError ? 'error' : ''));
   status('#telegram-run-state', tgStatus, tgLevel);
   status('#telegram-state', tgStatus, tgLevel);
-  status('#vless-state', state.vlessActive ? 'Запущен' : (state.vlessConfigured ? 'Профиль сохранён' : 'Не настроен'), state.vlessActive ? 'active' : '');
+  status('#vless-state', state.vlessActive ? 'Подключён' : (state.vlessConfigured ? 'Готов к подключению' : 'Не настроен'), state.vlessActive ? 'active' : '');
   status('#dpi-strategy-state', state.verifiedStrategy ? 'Подтверждена' : 'Не подобрана', state.verifiedStrategy ? 'active' : '');
   $('#dpi-detail').textContent = state.active ? `Стратегия: ${strategyLabel(state.profile.strategy)}.` : (state.verifiedStrategy ? `Сохранена стратегия: ${strategyLabel(state.verifiedStrategy)}.` : 'Выберите сервисы и запустите подбор стратегии.');
   $('#dpi-strategy-description').textContent = state.verifiedStrategy ? `Сохранена стратегия «${strategyLabel(state.verifiedStrategy)}». Повторный подбор проверит стратегии заново и запустит подходящую.` : 'Автоподбор проверит стратегии по очереди и включит первую подходящую.';
@@ -312,6 +335,9 @@ function configureAndroidSettings() {
   quick.closest('section').querySelector('h2').textContent = 'Быстрый запуск';
   quick.closest('section').querySelector('.eyebrow').classList.add('hidden');
   const links = settings.querySelector('.project-links');
+  const help=document.createElement('button');help.id='open-guide';help.className='button outlined';help.textContent='Как пользоваться';quick.prepend(help);
+  const cancel=document.createElement('button');cancel.id='cancel-operation';cancel.className='text-button hidden';cancel.textContent='Остановить всё';$('#global-progress').append(cancel);
+  document.querySelector('.topbar').after($('#global-progress'),$('#toast'));
   const groups = {};
   for (const [mode, title] of [['lab','DPI · сервисы и профиль'], ['routes','VPN · сайты и приложения'], ['telegram','Telegram · параметры прокси']]) {
     const group = document.createElement('details');
@@ -346,6 +372,9 @@ function configureAndroidSettings() {
   }
   groups.routes.classList.add('hidden');
   $('#open-subscription').textContent = 'Добавить подключение';
+  const connectionHint=document.createElement('p');connectionHint.id='connection-edit-hint';connectionHint.className='info-note hidden';document.querySelector('.subscription-toolbar').after(connectionHint);
+  $('#subscription-empty h3').classList.add('hidden');
+  document.querySelector('.vless-connection-panel .eyebrow').classList.add('hidden');
   $('#subscription-dialog h2').textContent = 'Добавить подключение';
   document.querySelector('label[for="subscription-input"]').textContent = 'Ссылка VLESS, HTTPS-подписка или список';
   $('#subscription-input').placeholder = 'vless://… или https://…';
@@ -442,7 +471,7 @@ async function perform(kind, message, action, onSuccess) {
   }
 }
 async function stopDpi(everything) {
-  if (pending?.kind === 'stop' || (!everything && pending && pending.kind !== 'dpi')) return;
+  if (pending?.kind === 'stop') return;
   // Invalidate an outstanding check before requesting cancellation.
   pending = null; revision++;
   let stopped = false;
@@ -451,6 +480,12 @@ async function stopDpi(everything) {
     return result.ok === false ? result : {state:result,message:everything ? 'DPI, VLESS и Telegram-прокси остановлены.' : 'DPI остановлен, подбор отменён.'};
   }, () => { stopped = true; });
   if (stopped) $('#test-results').innerHTML = '<div class="test-result">DPI остановлен. Можно запустить новую проверку.</div>';
+}
+async function stopSeparate(component) {
+  if(pending?.kind==='stop')return;
+  pending=null;revision++;
+  const method=component==='vless'?(isAndroid()?'stopVless':'toggleVless'):'stopTelegram';
+  return perform('stop','Останавливаю выбранный режим…',()=>window.localRoute[method]());
 }
 function addDomain(kind) {
   const input = $(kind === 'dpi' ? '#custom-domain' : '#vless-custom-domain');
@@ -464,10 +499,15 @@ function addDomain(kind) {
 }
 async function handleAction(button) {
   const id = button.id;
+  if(id==='open-guide'){showGuide();return;}
+  if(id==='cancel-operation')return stopDpi(true);
   if(id==='back-settings'){navigate(settingsReturnPage);return;}
   if(id==='open-subscription'){ $('#subscription-dialog').showModal(); $('#subscription-input').focus(); return; }
   if(button.dataset.refreshSubscription) return perform('vless','Обновляю подписку…',()=>window.localRoute.importVless({refresh:true,groupId:button.dataset.refreshSubscription}));
-  if(button.dataset.removeSubscription) return perform('vless','Удаляю подписку…',()=>window.localRoute.removeSubscription(button.dataset.removeSubscription),()=>{resetDraft('vless');renderEditor('vless');});
+  if(button.dataset.removeSubscription) {
+    if(isAndroid() && !await confirmAction('Удалить эту подписку и её серверы с устройства?', 'Удалить'))return;
+    return perform('vless','Удаляю подписку…',()=>window.localRoute.removeSubscription(button.dataset.removeSubscription),()=>{resetDraft('vless');renderEditor('vless');});
+  }
   if(button.dataset.androidTile) return perform('tile','Добавляю плитку…',()=>window.localRoute.addTile(button.dataset.androidTile));
   if(id==='save-dpi-command') return perform('save','Сохраняю профиль DPI…',()=>window.localRoute.saveDpiCommand($('#dpi-command').value));
   if(id==='reject-dpi') return perform('dpi','Останавливаю неработающий вариант и запускаю следующий…',()=>window.localRoute.rejectDpi(),result=>{$('#test-results').textContent=result.message || '';});
@@ -501,7 +541,7 @@ async function handleAction(button) {
   }
   if (id === 'save-dpi') return perform('save', 'Сохраняю сервисы DPI…', async () => {const result=await window.localRoute.saveProfile(clone(dpiDraft)); return result.ok===false ? result : {state:result,message:'Сервисы сохранены. Подберите стратегию для нового профиля.'};}, () => { resetDraft('dpi'); renderEditor('dpi'); });
   if (id === 'save-vless') return perform('vless', 'Проверяю и сохраняю профиль…', () => window.localRoute.saveVless(clone(vlessDraft)), () => { resetDraft('vless'); renderEditor('vless'); $('#vless-test-results').innerHTML = '<p class="setting-description">Профиль сохранён. Проверьте сервер и выбранные сайты.</p>'; });
-  if (id === 'toggle-vless' || id === 'start-vless') return perform('vless', state.vlessActive ? 'Останавливаю VLESS…' : 'Запускаю VLESS…', () => state.vlessActive ? window.localRoute.toggleVless() : window.localRoute.startVless());
+  if (id === 'toggle-vless' || id === 'start-vless') return state.vlessActive ? stopSeparate('vless') : perform('vless', 'Подключаю VPN…', () => window.localRoute.startVless());
   if (id === 'test-vless') return perform('vless', 'Проверяю сервер и выбранные сайты через VLESS…', () => window.localRoute.testVless());
   if (id === 'start-all') return perform('all', 'Запускаю настроенные компоненты…', () => window.localRoute.startAll());
   if (id === 'stop-all') return stopDpi(true);
@@ -519,6 +559,7 @@ async function handleAction(button) {
   if (id === 'start-telegram' || id.startsWith('telegram-')) {
     if (id === 'telegram-save' && !$('#telegram-port').reportValidity()) return;
     const stop = id === 'telegram-stop' || (id === 'start-telegram' && state.telegramActive);
+    if(stop)return stopSeparate('telegram');
     const action = id === 'telegram-save' ? () => window.localRoute.saveTelegram(clone(telegramDraft)) : stop ? () => window.localRoute.stopTelegram() : (id === 'telegram-start' || id === 'start-telegram') ? () => window.localRoute.startTelegram() : id === 'telegram-copy' ? () => window.localRoute.copyTelegram() : () => window.localRoute.connectTelegram();
     return perform('telegram', stop ? 'Останавливаю Telegram-прокси…' : 'Выполняю действие Telegram…', action, (result) => {
       if (id === 'telegram-save') { resetDraft('telegram'); renderEditor('telegram'); }
@@ -534,10 +575,15 @@ document.addEventListener('click', (event) => {
   if (!button || button.disabled) return;
   handleAction(button).catch((error) => showError(error.message));
 });
-document.addEventListener('change', (event) => {
+document.addEventListener('change', async (event) => {
   if (!state) return;
   const input = event.target;
-  if(input.matches('.bypass-app')) { perform('save','Сохраняю исключения…',()=>window.localRoute.saveBypassApps(all('.bypass-app:checked').map(node=>node.value))); return; }
+  if(input.matches('.bypass-app')) {
+    const selected=all('.bypass-app:checked').map(node=>node.value);
+    await perform('save','Сохраняю исключения…',()=>window.localRoute.saveBypassApps(selected));
+    all('.bypass-app').forEach(node=>{node.checked=Boolean(state.bypassApps?.find(item=>item.id===node.value)?.selected);});
+    return;
+  }
   if (input.matches('#service-list input')) dpiDraft.services = all('#service-list input:checked').map((node) => node.value);
   if (input.matches('.vless-service')) vlessDraft.services = all('.vless-service:checked').map((node) => node.value);
   if (input.matches('.vless-app')) {
@@ -578,6 +624,7 @@ async function initialize() {
     $('#strategy-count').textContent = String(UPSTREAM_STRATEGY_IDS.length);
     for (const kind of ['dpi', 'vless', 'telegram']) renderEditor(kind);
     renderState();
+    if(isAndroid() && !state.guideCompleted) showGuide();
   } catch (error) { showError(`Не удалось загрузить состояние приложения: ${error.message}. Перезапустите Local Route.`); }
 }
 window.localRoute.onProgress?.((operation) => {

@@ -88,7 +88,7 @@ class SharedRouteHost(
         activity.lifecycleScope.launch {
             if (webView.url?.startsWith(ORIGIN) != true) return@launch
             val readonly = method == "readState"
-            val stopping = method in setOf("stopAll", "stopEngine", "stopTelegram")
+            val stopping = method in setOf("stopAll", "stopEngine", "stopTelegram", "stopVless")
             if (!readonly && !stopping && operation?.isActive == true) { reply(requestId, JSONObject().put("ok",false).put("message","Дождитесь завершения операции или остановите её.")); return@launch }
             if (stopping) { operation?.cancelAndJoin(); operation = null; operationName = null }
             val current = coroutineContext[Job]
@@ -101,8 +101,8 @@ class SharedRouteHost(
             } catch (cancelled: CancellationException) {
                 reply(requestId, JSONObject().put("ok",false).put("message","Операция остановлена."))
                 throw cancelled
-            } catch (_: Exception) {
-                reply(requestId, JSONObject().put("ok",false).put("message","Действие не выполнено. Проверьте настройки и подключение. Рабочие данные сохранены."))
+            } catch (error: Exception) {
+                reply(requestId, JSONObject().put("ok",false).put("message",ActionErrors.message(method,error)))
             } finally { if (operation === current) { operation = null; operationName = null } }
         }
     }
@@ -153,6 +153,7 @@ class SharedRouteHost(
             .put(JSONObject().put("label","VPN").put("value",VlessRuntime.state.value.message).put("level",if(vpnActive())"ok" else "neutral"))
             .put(JSONObject().put("label","Telegram").put("value",tg.message).put("level",if(tgActive())"ok" else "neutral"))
         return JSONObject().put("appVersion",BuildConfig.VERSION_NAME).put("platform","android")
+            .put("guideCompleted",activity.getSharedPreferences("local_route",android.content.Context.MODE_PRIVATE).getBoolean("guide_completed_v3",false))
             .put("catalog",JSONObject().put("dpiServices",JSONObject().put("youtube","YouTube").put("discord","Discord")).put("vlessServices",vpnLabels)
                 .put("strategies",JSONArray().also { list -> candidates.forEach { list.put(JSONObject().put("id",it.id).put("label",it.title)) } }).put("autoStrategyIds",array(candidates.map { it.id })))
             .put("profile",JSONObject().put("services",selectedServices()).put("customDomains",array(profile.customDomains())).put("domains",array(dpiDomains())).put("strategy",dpi.strategyId ?: profile.lastSuccessfulStrategy() ?: candidates.first().id))
@@ -215,6 +216,7 @@ class SharedRouteHost(
                 if(uri.isNotBlank()) servers.save(uri)
                 if(raw.optString("uri").isNotBlank()) addLinks(listOf(uri),"")
             }
+            "completeGuide" -> { check(activity.getSharedPreferences("local_route",android.content.Context.MODE_PRIVATE).edit().putBoolean("guide_completed_v3",true).commit()) }
             "importVless" -> return importSubscription(raw)
             "selectVless" -> { check(!vpnActive()); val selected=profiles().firstOrNull { id(it.link)==payload } ?: error("Сервер не найден"); servers.save(selected.link) }
             "removeSubscription" -> {
@@ -226,14 +228,16 @@ class SharedRouteHost(
             }
             "deleteVless" -> { check(!vpnActive()); servers.clear() }
             "startVless" -> startServer()
+            "stopVless" -> { stopVpn(); awaitStopped(vpn=true) }
             "toggleVless" -> { if(vpnActive()) { stopVpn(); awaitStopped(vpn=true) } else startServer() }
             "testVless" -> {
                 val started=!vpnActive()
                 try {
                     if(started) startServer()
-                    val ok=withContext(Dispatchers.IO) { runCatching { ServerConnectionProbe.check() }.getOrDefault(false) }
-                    return response(if(ok)"HTTPS через сервер работает; проверьте нужные приложения." else "Нет ответа HTTPS через сервер.").put("ok",ok)
-                        .put("results",JSONArray().put(JSONObject().put("label","HTTPS через сервер").put("success",ok).put("detail",if(ok)"HTTP 200" else "Нет ответа").put("durationMs",0)))
+                    val results=runInterruptible(Dispatchers.IO) { ServerConnectionProbe.probe() }
+                    val ok=results.any { it.success }
+                    return response(if(ok)"Получен HTTPS-ответ через сервер. Проверьте нужные приложения." else "Проверочные адреса не ответили. Это не доказывает, что все приложения недоступны: попробуйте открыть нужный сервис.").put("ok",ok)
+                        .put("results",JSONArray().also { rows -> results.forEach { rows.put(JSONObject().put("label",it.host).put("success",it.success).put("detail",it.detail).put("durationMs",0)) } })
                 } finally { if(started) { stopVpn(); withContext(NonCancellable) { awaitStopped(vpn=true) } } }
             }
             "autoSelectServer" -> return autoSelectServer()
@@ -319,6 +323,8 @@ class SharedRouteHost(
         var result=before
         updates.forEach { (source,links) -> result=mergeGroup(result,links,source) }
         servers.saveConnectionGroups(result)
+        val available=profiles()
+        if(servers.uri().isNullOrBlank() && available.size==1) servers.save(available.single().link)
         return response("Список обновлён. Поддерживаются VLESS-серверы; другие протоколы пропущены.")
     }
     private fun mergeGroup(before: JSONArray, links: List<String>, source: String): JSONArray {
@@ -337,7 +343,7 @@ class SharedRouteHost(
                 for(candidate in profiles().sortedBy { if(it.link==previous)0 else 1 }) {
                     servers.save(candidate.link)
                     try { startServer() } catch(cancelled: CancellationException) { throw cancelled } catch(_: Exception) { }
-                    if(vpnActive() && withContext(Dispatchers.IO) { runCatching { ServerConnectionProbe.check() }.getOrDefault(false) }) { found=true; break }
+                    if(vpnActive() && runInterruptible(Dispatchers.IO) { runCatching { ServerConnectionProbe.check() }.getOrDefault(false) }) { found=true; break }
                     stopVpn(); awaitStopped(vpn=true)
                 }
             }

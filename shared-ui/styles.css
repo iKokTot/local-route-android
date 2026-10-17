@@ -231,6 +231,11 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
 #subscription-dialog::backdrop { background:#0009; }
 #confirmation-dialog { color:var(--on-surface); background:var(--surface-container); border:1px solid var(--outline-variant); border-radius:20px; padding:20px; width:min(420px,calc(100vw - 32px)); }
 #confirmation-dialog::backdrop { background:#0009; }
+#guide-dialog { color:var(--on-surface); background:var(--surface-container); border:1px solid var(--outline-variant); border-radius:20px; padding:20px; width:min(460px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); overflow-y:auto; }
+#guide-dialog::backdrop { background:#000b; }
+#guide-dialog p { line-height:1.6; }
+#guide-dialog .vless-actions { display:flex; flex-wrap:wrap; }
+#guide-dialog .vless-actions .button { flex:1 1 120px; }
 #subscription-dialog .panel-heading { margin-bottom:16px; }
 .project-links { margin-top:16px; }
 .project-links .text-button { margin-right:14px; }
@@ -266,6 +271,19 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
 .platform-android .server-description strong, .platform-android .server-description small { overflow-wrap: anywhere; }
 .platform-android #page-content { padding-bottom: 32px; }
 .platform-android .journal-link, .platform-android .service-feedback > .text-button { display: none; }
+.platform-android #toast { position:static; display:none; flex-shrink:0; margin:0 14px 10px; width:auto; max-width:none; max-height:96px; transform:none; box-shadow:none; pointer-events:auto; }
+.platform-android #toast.show { display:block; }
+.platform-android #global-progress { position:static; flex-shrink:0; margin:0 14px 10px; flex-wrap:wrap; max-height:120px; overflow:auto; }
+.platform-android #global-progress span { flex:1 1 160px; }
+.platform-android #cancel-operation { min-height:44px; }
+.platform-android .vpn-exceptions { padding:8px 16px; }
+.platform-android .vpn-exceptions > summary { padding:8px 0; }
+.platform-android .server-row { flex-wrap:wrap; }
+.platform-android .server-description { flex:1 1 160px; }
+.platform-android .server-row .select-server { min-height:44px; }
+.platform-android .component-card .route-state { max-width:120px; white-space:normal; overflow-wrap:anywhere; }
+.platform-android button, .platform-android .nav-button span { overflow-wrap:anywhere; }
+.platform-android .topbar h1 { min-width:0; }
 @media (max-width:760px) {
   .topbar { padding:10px 16px 8px; flex-wrap:nowrap; min-height:52px; }
   .topbar h1 { font-size:23px; }

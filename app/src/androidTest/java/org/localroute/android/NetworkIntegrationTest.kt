@@ -14,6 +14,27 @@ import org.localroute.android.tunnel.*
 
 @RunWith(AndroidJUnit4::class)
 class NetworkIntegrationTest {
+    @Test fun multiAddressProbeDoesNotConfuseFixtureWithInternetAccess() {
+        foreground()
+        val store=VlessStore(context)
+        val previous=store.uri().orEmpty()
+        try {
+            store.save("vless://00000000-0000-4000-8000-000000000000@10.0.2.2:18443?security=none&type=ws&path=%2Ftest")
+            ContextCompat.startForegroundService(context,Intent(context,CombinedVpnService::class.java).setAction(CombinedVpnService.START_SERVER))
+            await { VlessRuntime.state.value.state==TunnelState.Connected }
+            val results=ServerConnectionProbe.probe()
+            assertEquals(3,results.size)
+            assertEquals(3,results.map { it.host }.toSet().size)
+            // This fixture intentionally does not forward the public HTTPS probe hosts.
+            // A listening engine and a working test destination are not Internet proof.
+            assertFalse(results.any { it.success })
+            assertEquals("local-route-vless-fixture",probe())
+        } finally {
+            context.startService(Intent(context,CombinedVpnService::class.java).setAction(CombinedVpnService.STOP_ALL))
+            await { !CombinedRuntime.state.value.busy && !CombinedRuntime.state.value.plan.requiresVpn }
+            store.save(previous)
+        }
+    }
     @Test fun excludedAppBypassesTunInBothModesAndReturnsAfterRemoval() {
         foreground()
         val store = VlessStore(context)

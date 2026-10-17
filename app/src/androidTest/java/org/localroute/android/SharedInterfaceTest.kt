@@ -15,6 +15,51 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
+    @Test fun invalidConnectionShowsSafeErrorWithoutChangingLibrary() {
+        attach()
+        js("navigate('routes');window.serversBefore=JSON.stringify(state.vlessServers);document.querySelector('#open-subscription').click();document.querySelector('#subscription-input').value='vless://private-key@invalid';document.querySelector('#import-subscription').click()")
+        try {
+            await("!pending && document.querySelector('#app-error').textContent.length>0")
+            assertEquals(true, js("document.querySelector('#subscription-dialog').open"))
+            assertEquals(false, js("document.querySelector('#import-subscription').disabled"))
+            assertEquals(true, js("JSON.stringify(state.vlessServers)===serversBefore"))
+            assertEquals(false, js("document.querySelector('#app-error').textContent.includes('private-key')"))
+            assertEquals(true, js("document.querySelector('#app-error').textContent.includes('VLESS')"))
+        } finally { js("document.querySelector('#subscription-dialog').close();showError('');navigate('control')") }
+    }
+    @Test fun guideIsManualAndFailedExclusionsRollBack() {
+        attach()
+        js("showGuide()")
+        await("Boolean(document.querySelector('#guide-dialog')?.open)")
+        assertEquals(true, js("document.querySelector('#guide-title').textContent.startsWith('VPN')"))
+        js("document.querySelector('#guide-next').click()")
+        assertEquals(true, js("document.querySelector('#guide-title').textContent.startsWith('DPI')"))
+        js("document.querySelector('#guide-next').click()")
+        assertEquals(true, js("document.querySelector('#guide-title').textContent.startsWith('Telegram')"))
+        js("document.querySelector('#guide-later').click()")
+        await("!document.querySelector('#guide-dialog')")
+        js("navigate('routes');document.querySelector('.vpn-exceptions').open=true;window.realBridge=window.localRoute;window.localRoute=new Proxy(realBridge,{get:(target,key)=>key==='saveBypassApps'?()=>Promise.resolve({ok:false,message:'Не удалось сохранить исключения.'}):target[key]});window.exclusionBefore=document.querySelector('.bypass-app').checked;document.querySelector('.bypass-app').click()")
+        try {
+            await("!pending && document.querySelector('.bypass-app').checked===exclusionBefore")
+            assertEquals(true, js("document.querySelector('#app-error').textContent.includes('исключения')"))
+            assertEquals("static", js("getComputedStyle(document.querySelector('#toast')).position"))
+        } finally { js("window.localRoute=realBridge;showError('');navigate('control')") }
+    }
+    @Test fun largeTextLongNamesAndKeyboardFormRemainUsable() {
+        attach()
+        instrumentation.runOnMainSync { web.settings.textZoom=150 }
+        try {
+            js("navigate('routes');state.vlessServers=[{id:'layout-test',name:'Очень длинное название сервера для проверки переноса текста и доступности кнопки выбора',server:'long-server.example.org',port:443,selected:false}];state.vlessSubscriptions=[{id:'layout-group',name:'Длинное название подписки для проверки',serverIds:['layout-test'],canRefresh:false}];renderState()")
+            assertEquals(true, js("document.documentElement.scrollWidth<=innerWidth && document.querySelector('#page-content').scrollWidth<=document.querySelector('#page-content').clientWidth"))
+            js("document.querySelector('#open-subscription').click()")
+            assertEquals(true, js("document.querySelector('#subscription-dialog').scrollWidth<=document.querySelector('#subscription-dialog').clientWidth"))
+            assertEquals(false, js("document.querySelector('#subscription-input').disabled"))
+            instrumentation.runOnMainSync { instrumentation.targetContext.getSystemService(android.view.inputmethod.InputMethodManager::class.java).showSoftInput(web,0) }
+            js("document.querySelector('#subscription-input').value='vless://test';document.querySelector('#subscription-input').dispatchEvent(new Event('input',{bubbles:true}))")
+            assertEquals("vless://test", js("document.querySelector('#subscription-input').value"))
+            js("document.querySelector('#subscription-dialog').close();refreshState();navigate('control')")
+        } finally { instrumentation.runOnMainSync { web.settings.textZoom=100 } }
+    }
     @Test fun noFalseDpiSuccessAndUnsavedSettingsAskBeforeLeaving() {
         attach()
         js("navigate('lab')")
@@ -51,12 +96,17 @@ class SharedInterfaceTest {
             assertEquals("https://example.org/subscription", js("document.querySelector('#subscription-input').value"))
             js("document.querySelector('#subscription-input').value='vless://00000000-0000-4000-8000-000000000000@example.org:443?security=tls&type=ws#InterfaceTest';document.querySelector('#import-subscription').click()")
             await("!pending && !document.querySelector('#subscription-dialog').open && state.vlessServers.length>0")
-            js("document.querySelector('.select-server:not(:disabled)').click()")
+            js("document.querySelector('.select-server:not(:disabled)')?.click()")
             await("!pending && state.vlessConfigured")
             assertEquals(false, js("dirty('vless')"))
             assertEquals(false, js("document.querySelector('#toggle-vless').disabled"))
             assertEquals(true, store.routes().allTraffic)
             assertEquals(true, store.routes().packages.isEmpty())
+            js("document.querySelector('.remove-subscription').click()")
+            await("Boolean(document.querySelector('#confirmation-dialog')?.open)")
+            js("document.querySelector('#confirmation-dialog .outlined').click()")
+            await("!document.querySelector('#confirmation-dialog')")
+            assertNotNull(store.uri())
             store.saveRoutes(routes.copy(allTraffic=false, packages=setOf("com.example.old")))
             assertEquals(true, store.routes().allTraffic)
             assertEquals(true, store.routes().packages.isEmpty())
@@ -103,7 +153,20 @@ class SharedInterfaceTest {
     private lateinit var web: WebView
     internal fun attach() {
         val context=instrumentation.targetContext
-        activity=instrumentation.startActivitySync(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        context.getSharedPreferences("local_route",android.content.Context.MODE_PRIVATE).edit().putBoolean("guide_completed_v3",true).commit()
+        // singleTop delivers onNewIntent to the existing activity. startActivitySync
+        // waits for a new onCreate in that case and falsely times out after 45s.
+        context.startActivity(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val deadline=SystemClock.uptimeMillis()+15000
+        var resumed: MainActivity? = null
+        while(resumed==null && SystemClock.uptimeMillis()<deadline) {
+            instrumentation.runOnMainSync {
+                resumed=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<MainActivity>().firstOrNull()
+            }
+            if(resumed==null) SystemClock.sleep(100)
+        }
+        activity=requireNotNull(resumed) { "Activity не перешла в RESUMED" }
         instrumentation.runOnMainSync { web=requireNotNull(findWeb(activity.window.decorView)) }
         await("Boolean(window.localRoute && document.querySelector('#engine-status') && document.querySelector('#engine-status').textContent!=='Загрузка состояния…')")
     }

@@ -19,6 +19,7 @@ if (!window.localRoute && window.LocalRouteNative) {
   }});
   // Кнопка Android «Назад» закрывает форму, затем общие настройки, затем возвращает обзор.
   window.localRouteBack = () => {
+    if (document.querySelector('#guide-dialog')?.open) { document.querySelector('#guide-dialog').close(); return true; }
     if (document.querySelector('#confirmation-dialog')?.open) { document.querySelector('#confirmation-dialog').close(); return true; }
     if (document.querySelector('#subscription-dialog')?.open) { document.querySelector('#subscription-dialog').close(); return true; }
     if (typeof currentPage !== 'undefined' && currentPage !== 'control') {
