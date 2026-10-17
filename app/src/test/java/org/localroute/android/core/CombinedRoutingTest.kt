@@ -8,7 +8,7 @@ class CombinedRoutingTest {
         for (dpi in listOf(false, true)) for (server in listOf(false, true)) {
             val state = CombinedRouting(dpi, server)
             assertEquals(dpi || server, state.requiresVpn)
-            assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("example.com"))
+            assertEquals(if (server) TrafficDestination.SERVER else TrafficDestination.DIRECT, state.destinationForDomain("example.com"))
             assertEquals(if (dpi) TrafficDestination.LOCAL_DPI else state.defaultDestination, state.destinationForDomain("rr1.googlevideo.com"))
         }
     }
@@ -18,13 +18,13 @@ class CombinedRoutingTest {
         assertEquals(CombinedRouting(true, false), both.toggle(ConnectionFeature.SERVER, false))
     }
     @Test fun domainMatchingIsLabelBoundedAndCaseInsensitive() {
-        val state = CombinedRouting(true, true)
+        val state = CombinedRouting(true, true, serverRoutes = ServerRoutes(allTraffic = false))
         assertEquals(TrafficDestination.LOCAL_DPI, state.destinationForDomain("WWW.YouTube.Com."))
         assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("notyoutube.com"))
         assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("youtube.com.attacker.test"))
     }
     @Test fun selectionAffectsOnlyChosenServicesIncludingNativePackages() {
-        val state = CombinedRouting(true, true, setOf(ServiceTarget.DISCORD))
+        val state = CombinedRouting(true, true, setOf(ServiceTarget.DISCORD), serverRoutes = ServerRoutes(allTraffic = false))
         assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("youtube.com"))
         assertEquals(TrafficDestination.DIRECT, state.destinationForPackage("com.discord"))
         assertEquals(TrafficDestination.DIRECT, state.destinationForPackage("com.google.android.youtube"))

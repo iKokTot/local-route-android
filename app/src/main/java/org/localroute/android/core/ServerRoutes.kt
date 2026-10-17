@@ -2,7 +2,7 @@ package org.localroute.android.core
 
 /** Одинаковый порядок на обеих платформах: DPI, правила VPN, прямой выход. */
 data class ServerRoutes(
-    val allTraffic: Boolean = false,
+    val allTraffic: Boolean = true,
     val domains: Set<String> = setOf("tiktok.com", "tiktokv.com", "tiktokcdn.com", "ibytedtos.com", "byteoversea.com", "musical.ly", "instagram.com", "cdninstagram.com", "fbcdn.net"),
     val packages: Set<String> = emptySet()
 ) {

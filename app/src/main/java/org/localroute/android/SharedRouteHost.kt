@@ -205,12 +205,14 @@ class SharedRouteHost(
             "toggleEngine" -> { if(dpiActive())stopDpi() else return runTrial(restart=true) }
             "stopEngine" -> { stopDpi(); awaitStopped(dpi=true) }
             "saveVless" -> {
-                check(!vpnActive()); val uri=raw.optString("uri").ifBlank { servers.uri().orEmpty() }; VlessUriParser.parse(uri)
+                check(!vpnActive()); val uri=raw.optString("uri").ifBlank { servers.uri().orEmpty() }
+                if(uri.isNotBlank()) VlessUriParser.parse(uri)
                 val selected = strings(raw.optJSONArray("services"))
                 val catalog=dpiCatalog.getJSONObject("vpn")
                 val domains=selected.flatMap { strings(catalog.getJSONObject(it).getJSONArray("domains")) }.toSet() + strings(raw.optJSONArray("customDomains"))
                 val routes=ServerRoutes(raw.optString("mode")=="all",domains,strings(raw.optJSONArray("apps")).toSet())
-                servers.saveRoutes(routes); servers.save(uri)
+                servers.saveRoutes(routes)
+                if(uri.isNotBlank()) servers.save(uri)
                 if(raw.optString("uri").isNotBlank()) addLinks(listOf(uri),"")
             }
             "importVless" -> return importSubscription(raw)

@@ -15,6 +15,37 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
+    @Test fun unsavedRoutesDoNotBlockAddingConnection() {
+        attach()
+        val store = org.localroute.android.tunnel.VlessStore(instrumentation.targetContext)
+        val routes = store.routes()
+        val groups = store.connectionGroups()
+        val selected = store.uri()
+        try {
+            js("navigate('routes');navigate('settings');vlessDraft.mode=vlessDraft.mode==='all'?'selective':'all';renderEditor('vless');renderControls()")
+            assertEquals(false, js("document.querySelector('#save-vless').disabled"))
+            assertEquals(false, js("document.querySelector('#vless-uri').disabled"))
+            js("navigate('routes');document.querySelector('#open-subscription').click()")
+            assertEquals(true, js("document.querySelector('#subscription-dialog').open"))
+            assertEquals(false, js("document.querySelector('#subscription-input').disabled"))
+            assertEquals(false, js("document.querySelector('#import-subscription').disabled"))
+            js("document.querySelector('#subscription-input').value='https://example.org/subscription';document.querySelector('#subscription-input').dispatchEvent(new Event('input',{bubbles:true}))")
+            assertEquals("https://example.org/subscription", js("document.querySelector('#subscription-input').value"))
+            js("document.querySelector('#subscription-input').value='vless://00000000-0000-4000-8000-000000000000@example.org:443?security=tls&type=ws#InterfaceTest';document.querySelector('#import-subscription').click()")
+            await("!pending && !document.querySelector('#subscription-dialog').open && state.vlessServers.length>0")
+            js("document.querySelector('.select-server:not(:disabled)').click()")
+            await("!pending && state.vlessConfigured")
+            assertEquals(true, js("dirty('vless')"))
+            js("document.querySelector('#save-vless').click()")
+            await("!pending && !dirty('vless')")
+            assertEquals(!routes.allTraffic, org.localroute.android.tunnel.VlessStore(instrumentation.targetContext).routes().allTraffic)
+        } finally {
+            store.saveRoutes(routes)
+            store.saveConnectionGroups(groups)
+            if(selected!=null) store.save(selected) else store.clearSelection()
+            js("navigate('control')")
+        }
+    }
     @Test fun compactAndroidSettingsAndEditablePortPersist() {
         attach()
         assertEquals(true, js("document.querySelector('#diagnostics').closest('[data-page-panel]').dataset.pagePanel==='settings'"))

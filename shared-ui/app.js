@@ -63,7 +63,7 @@ function resetDraft(kind) {
     dpiDraft = { services: [...state.profile.services], customDomains: [...state.profile.customDomains], strategy: state.profile.strategy };
     savedDpi = JSON.stringify(dpiDraft);
   } else if (kind === 'vless') {
-    vlessDraft = { uri: '', mode: state.vless?.mode || 'selective', services: [...(state.vless?.services || [])], apps: [...(state.vless?.apps || [])], customDomains: [...(state.vless?.customDomains || [])] };
+    vlessDraft = { uri: '', mode: state.vless?.mode || 'all', services: [...(state.vless?.services || [])], apps: [...(state.vless?.apps || [])], customDomains: [...(state.vless?.customDomains || [])] };
     savedVless = JSON.stringify(vlessDraft);
   } else {
     telegramDraft = { port: state.telegram?.port || 1443, enabled: Boolean(state.telegram?.enabled) };
@@ -106,13 +106,13 @@ function renderControls() {
   const dpiBusy = pending?.kind === 'dpi' || ['auto','test'].includes(state.operation?.kind);
   const dpiLocked = busy || state.active;
   const vlessLocked = busy || state.vlessActive;
-  disable('#open-subscription, .remove-subscription, .refresh-subscription', vlessLocked || dirty('vless'), 'Остановите VPN и сохраните маршруты');
+  disable('#open-subscription, .remove-subscription, .refresh-subscription', vlessLocked, 'Сначала остановите VPN');
   disable('#dpi-command, #save-dpi-command', dpiLocked, 'Сначала остановите DPI');
   disable('#confirm-dpi', busy || !state.active || !state.dpiTrial?.pendingConfirmation, 'Сначала запустите вариант и проверьте сервис');
   disable('#reject-dpi', busy || !state.dpiTrial?.candidate, 'Начните проверку профилей');
   $('#reject-dpi').textContent=state.dpiTrial?.hasNext===false ? 'Не работает — остановить' : 'Не работает — следующий';
   disable('.bypass-app', busy || state.vlessActive, 'Сначала остановите VPN');
-  disable('#subscription-input, #import-subscription, .select-server', vlessLocked || dirty('vless'), 'Сначала сохраните маршруты и остановите VPN');
+  disable('#subscription-input, #import-subscription, .select-server', vlessLocked, 'Сначала остановите VPN');
   all('.select-server').forEach(button=>{if(state.vlessServers?.some(item=>item.id===button.dataset.serverId && item.selected))button.disabled=true;});
   disable('#auto-server', vlessLocked || dirty('vless') || !state.vlessServers?.length, 'Добавьте список серверов и остановите VPN');
   disable('#refresh-subscription', vlessLocked || dirty('vless') || !state.vlessSubscriptionSaved, 'Сначала добавьте HTTPS-подписку');
@@ -120,7 +120,7 @@ function renderControls() {
   disable('#service-list input, #custom-domain, #add-domain, #custom-domains button', dpiLocked, 'Сначала остановите DPI');
   disable('#save-dpi', dpiLocked || !dirty('dpi'), state.active ? 'Сначала остановите DPI' : 'Нет изменений для сохранения');
   disable('#vless-uri, #vless-mode, .vless-service, .vless-app, #vless-custom-domain, #add-vless-domain, #vless-custom-domains button, #manual-vless-app, #add-vless-app', vlessLocked, 'Сначала остановите VLESS');
-  disable('#save-vless', vlessLocked || !dirty('vless') || (!state.vlessConfigured && !vlessDraft.uri), state.vlessActive ? 'Сначала остановите VLESS' : 'Укажите сервер или измените маршруты');
+  disable('#save-vless', vlessLocked || !dirty('vless'), state.vlessActive ? 'Сначала остановите VLESS' : 'Нет изменений для сохранения');
   disable('#test-vless', busy || !state.vlessConfigured || dirty('vless'), 'Сначала сохраните профиль');
   disable('#start-vless, #toggle-vless', busy || (!state.vlessActive && (!state.vlessConfigured || dirty('vless'))), 'Сначала сохраните профиль VLESS');
   disable('#start-dpi', busy || (!state.active && (!state.verifiedStrategy || dirty('dpi'))), 'Подберите стратегию на вкладке «YouTube и Discord»');
@@ -422,7 +422,7 @@ async function handleAction(button) {
   if (button.dataset.resetKind) { const kind=button.dataset.resetKind; resetDraft(kind); renderEditor(kind); return; }
   if (id === 'auto-server') return perform('vless','Проверяю серверы по HTTPS…',()=>window.localRoute.autoSelectServer(),()=>{resetDraft('vless');renderEditor('vless');});
   if (id === 'import-subscription' || id === 'refresh-subscription') return perform('vless', 'Загружаю список серверов…', () => window.localRoute.importVless({input:$('#subscription-input').value,refresh:id==='refresh-subscription'}), () => { $('#subscription-input').value=''; $('#subscription-dialog').close(); renderServers(); });
-  if (button.dataset.serverId) return perform('vless','Выбираю сервер…',()=>window.localRoute.selectVless(button.dataset.serverId),()=>{resetDraft('vless');renderEditor('vless');});
+  if (button.dataset.serverId) return perform('vless','Выбираю сервер…',()=>window.localRoute.selectVless(button.dataset.serverId),()=>{renderEditor('vless');});
   if (id === 'pick-vless-app') return perform('pick', 'Выберите приложение…', () => window.localRoute.pickApplication(), result => {
     if (result.process && !vlessDraft.apps.some(name => name.toLowerCase()===result.process.toLowerCase())) vlessDraft.apps.push(result.process);
     $('#app-search').value=''; renderApps(); renderControls();

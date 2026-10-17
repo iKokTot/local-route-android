@@ -10,7 +10,7 @@ class CombinedConfigCompilerTest {
         val config = CombinedConfigCompiler.compile(CombinedRouting(true, true), endpoint)
         assertFalse(config.contains("package_name"))
         assertTrue(config.contains("\"domain_suffix\""))
-        assertTrue(config.contains("\"final\":\"direct\""))
+        assertTrue(config.contains("\"final\":\"vless-out\""))
         assertTrue(config.contains("\"udp_over_tcp\":false"))
         assertTrue(config.contains("\"path\":\"/test\""))
     }

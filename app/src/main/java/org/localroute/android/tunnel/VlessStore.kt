@@ -16,7 +16,7 @@ class VlessStore(context: Context) {
 
     fun routes(): org.localroute.android.core.ServerRoutes {
         val defaults = org.localroute.android.core.ServerRoutes()
-        return org.localroute.android.core.ServerRoutes(prefs.getBoolean("route_all_v2", false),
+        return org.localroute.android.core.ServerRoutes(prefs.getBoolean("route_all_v2", defaults.allTraffic),
             prefs.getStringSet("route_domains_v2", defaults.domains).orEmpty().toSet(),
             prefs.getStringSet("route_packages_v2", emptySet()).orEmpty().toSet())
     }
