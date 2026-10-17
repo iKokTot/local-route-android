@@ -58,6 +58,9 @@ internal fun RouteSettingsScreen(uri: String, changeUri: (String) -> Unit, saveU
     section: String, changeSection: (String) -> Unit) {
     var showLink by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
+    var subscription by remember { mutableStateOf("") }
+    var subscriptionProfiles by remember { mutableStateOf(emptyList<VlessProfile>()) }
+    var subscriptionError by remember { mutableStateOf<String?>(null) }
     androidx.activity.compose.BackHandler(enabled = section.isNotBlank()) { changeSection("") }
     val tg by TelegramProxyRuntime.state.collectAsState()
     var tgLog by remember { mutableStateOf(false) }
@@ -80,6 +83,19 @@ internal fun RouteSettingsScreen(uri: String, changeUri: (String) -> Unit, saveU
             OutlinedButton(onClick = { saved = saveUri(uri) }, enabled = !serverActive && uri.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (saved) "Сохранено" else "Сохранить ссылку") }
         }
         if (serverActive) Text("Чтобы изменить ссылку, выключите серверный режим.", style = MaterialTheme.typography.bodySmall)
+        Text("Список серверов", style = MaterialTheme.typography.titleMedium)
+        Text("Вставьте обычный список vless:// по строкам или Base64. Данные разбираются на телефоне.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(subscription, { subscription = it; subscriptionError = null }, label = { Text("Ссылка или список серверов") }, minLines = 2, maxLines = 4, enabled = !serverActive, modifier = Modifier.fillMaxWidth())
+        OutlinedButton(onClick = {
+            runCatching { VlessSubscriptionParser.parse(subscription).also { subscriptionProfiles = it } }
+                .onFailure { subscriptionError = it.message ?: "Не удалось прочитать список" }
+        }, enabled = !serverActive && subscription.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Разобрать список") }
+        subscriptionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        subscriptionProfiles.forEach { profile ->
+            OutlinedButton(onClick = { changeUri(profile.link); saved = false }, enabled = !serverActive, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("${profile.name} · ${profile.endpoint.server}:${profile.endpoint.port}", maxLines = 1)
+            }
+        }
         VpnExclusionsCard()
         OutlinedButton(onClick = { addTile(ShortcutMode.VLESS) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Добавить плитку VLESS") }
         VpnDiagnosticsCard()
