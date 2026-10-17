@@ -13,14 +13,12 @@ class TelegramProxySettings(context: Context) {
     fun secret(): String = prefs.getString("secret", null) ?: ByteArray(16).also { SecureRandom().nextBytes(it) }
         .joinToString("") { "%02x".format(it.toInt() and 255) }.also { prefs.edit().putString("secret", it).commit() }
     fun link() = "tg://proxy?server=127.0.0.1&port=1443&secret=dd${secret()}"
+    fun jointStart(): Boolean = prefs.getBoolean("joint_start", false)
+    fun setJointStart(value: Boolean) = prefs.edit().putBoolean("joint_start", value).apply()
     companion object {
-        fun outboundProxy(): String? = org.localroute.android.tunnel.VlessGateway.proxyUrl()
-            ?: if (org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase == org.localroute.android.localdpi.EnginePhase.ACTIVE) "socks5://127.0.0.1:1080" else null
-        fun routeLabel(): String = when {
-            org.localroute.android.tunnel.VlessGateway.proxyUrl() != null -> "через VLESS"
-            org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase == org.localroute.android.localdpi.EnginePhase.ACTIVE -> "через DPI"
-            else -> "напрямую"
-        }
+        // Как на десктопе, TGWs имеет самостоятельный прямой выход.
+        fun outboundProxy(): String? = null
+        fun routeLabel(): String = "напрямую"
     }
     fun arguments(): String {
         val gateway = outboundProxy()

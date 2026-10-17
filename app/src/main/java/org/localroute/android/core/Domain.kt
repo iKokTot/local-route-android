@@ -26,23 +26,27 @@ object AndroidStrategies {
         "-Kt,h -d1 -s0+s -d3+s -s6+s -d9+s -s12+s -d15+s -s20+s -d25+s -s30+s " +
             "-d35+s -An -Ku -a5 -s443+s -d80+s -d443+s -s80+s -s443+s -d53+s -s53+s -d443+s"
 
-    // Parameters are intentionally Android/local-SOCKS oriented, not WinDivert presets.
-    /**
-     * MVP deliberately exposes one profile only.  It is the byte-for-byte
-     * command line supplied from the working ByeDPIAndroid installation.
-     * More variants return only after this path is proven on a real device.
-     */
+    // Это кандидаты для проверки в своей сети, а не заранее подтверждённые стратегии.
+    // Дополнительные варианты используют методы из README закреплённого ByeDPI.
     val all = listOf(
         DpiStrategy(
             "byedpi-android-tcp-udp",
             "ByeDPIAndroid · TCP + UDP",
             "Многошаговый Android-профиль из ByeDPIAndroid: отдельные цепочки для TLS/HTTP и UDP/QUIC.",
             commandArguments(BYEDPI_ANDROID_TCP_UDP_COMMAND)
-        )
+        ),
+        DpiStrategy("byedpi-tls-record", "TLS · разделение записи", "Проверьте видео и голос после запуска.", commandArguments("--tlsrec 1+s")),
+        DpiStrategy("byedpi-tls-split", "TLS · разделение пакета", "Проверьте видео и голос после запуска.", commandArguments("--split 1 --tlsrec 1+s")),
+        DpiStrategy("byedpi-tls-disorder", "TLS · обратный порядок", "Вариант из примера README ByeDPI; требует проверки в вашей сети.", commandArguments("--disorder 1 --auto=torst --tlsrec 1+s"))
     )
 
     fun ordered(lastSuccessfulId: String?): List<DpiStrategy> =
         all.sortedBy { if (it.id == lastSuccessfulId) 0 else 1 }
+
+    fun candidates(lastSuccessfulId: String?, customCommand: String): List<DpiStrategy> =
+        (listOfNotNull(custom(customCommand)) + ordered(lastSuccessfulId))
+            // Одинаковые команды не должны повторяться под разными названиями.
+            .distinctBy { it.nativeArguments }
 
     fun custom(command: String): DpiStrategy? {
         val args = commandArguments(command)

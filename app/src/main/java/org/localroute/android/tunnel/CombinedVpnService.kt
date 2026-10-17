@@ -115,7 +115,7 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
             owner = this
         }
         val profile = ProfileStore(this)
-        val next = when (intent?.action) {
+        val requested = when (intent?.action) {
             START_DPI -> plan.copy(dpiEnabled = true, services = profile.selectedServices())
             STOP_DPI -> plan.copy(dpiEnabled = false)
             START_SERVER -> plan.copy(serverEnabled = true)
@@ -123,11 +123,12 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
             STOP_ALL -> plan.copy(dpiEnabled = false, serverEnabled = false)
             else -> plan
         }
+        val next = requested.copy(services = profile.selectedServices(), customDpiDomains = profile.customDomains(), serverRoutes = VlessStore(this).routes())
         if (!next.requiresVpn) { shutdown(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelfResult(startId); return }
-        require(Build.VERSION.SDK_INT >= 29 || !next.dpiEnabled || !next.serverEnabled) {
-            "Совместный режим требует Android 10 или новее. На этом устройстве используйте режимы отдельно."
+        require(Build.VERSION.SDK_INT >= 29 || next.serverRoutes.packages.isEmpty()) {
+            "Правила VPN по приложениям требуют Android 10 или новее. Используйте доменные правила."
         }
-        if (intent?.action == START_DPI) require(next.services.isNotEmpty()) { "Выберите сервис для DPI" }
+        if (intent?.action == START_DPI) require(next.services.isNotEmpty() || next.customDpiDomains.isNotEmpty()) { "Выберите сервис для DPI" }
         // Validate before mutating workers or replacing a healthy routing session.
         val endpoint = if (next.serverEnabled) {
             if (intent?.action == START_SERVER || !plan.serverEnabled) VlessUriParser.parse(VlessStore(this).uri().orEmpty())
@@ -204,8 +205,8 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
             if (plan.dpiEnabled && plan.serverEnabled) "Выбранные сервисы → DPI на телефоне"
             else if (plan.dpiEnabled) "Локальный DPI · без сервера" else "DPI выключен", strategy?.id)
         VlessRuntime.update(if (plan.serverEnabled) TunnelState.Connected else TunnelState.Disconnected,
-            if (plan.serverEnabled && plan.dpiEnabled) "Остальной интернет → ваш сервер; выбранные сервисы → DPI"
-            else if (plan.serverEnabled) "Интернет → ваш сервер" else "Серверный режим выключен")
+            if (plan.serverEnabled && plan.dpiEnabled) "DPI → локально; VPN → по сохранённым правилам"
+            else if (plan.serverEnabled) "VPN → по сохранённым правилам" else "Серверный режим выключен")
         foreground(if (plan.dpiEnabled && plan.serverEnabled) "DPI + VLESS" else if (plan.dpiEnabled) "Только DPI" else "Только VLESS")
     }
     private fun setupBox() {

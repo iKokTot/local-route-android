@@ -64,20 +64,17 @@ class NetworkIntegrationTest {
             await { org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase == org.localroute.android.localdpi.EnginePhase.ACTIVE }
             command(CombinedVpnService.START_SERVER)
             await { VlessRuntime.state.value.state == TunnelState.Connected }
-            val ui = InterfaceTest()
-            ui.click("DPI")
-            ui.clickScrolled("Выключить DPI")
+            val ui = SharedInterfaceTest().apply { attach() }
+            ui.stopComponent("dpi")
             await { org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase == org.localroute.android.localdpi.EnginePhase.STOPPED && !CombinedRuntime.state.value.busy }
             assertEquals(TunnelState.Connected, VlessRuntime.state.value.state)
             assertEquals("local-route-vless-fixture", probe())
             command(CombinedVpnService.START_DPI)
             await { org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase == org.localroute.android.localdpi.EnginePhase.ACTIVE }
-            ui.click("Сервер")
-            ui.clickScrolled("Выключить VPN")
+            ui.stopComponent("vless")
             await { VlessRuntime.state.value.state == TunnelState.Disconnected && !CombinedRuntime.state.value.busy }
             assertEquals(org.localroute.android.localdpi.EnginePhase.ACTIVE, org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase)
-            ui.click("DPI")
-            ui.clickScrolled("Выключить DPI")
+            ui.stopComponent("dpi")
             await { !CombinedRuntime.state.value.plan.requiresVpn && !CombinedRuntime.state.value.busy }
         } finally {
             context.startService(Intent(context, CombinedVpnService::class.java).setAction(CombinedVpnService.STOP_ALL))
@@ -261,10 +258,12 @@ class NetworkIntegrationTest {
         foreground()
         val store = VlessStore(context)
         val oldUri = store.uri()
+        val oldRoutes = store.routes()
         var logClient: io.nekohasekai.libbox.CommandClient? = null
         val messages = java.util.concurrent.CopyOnWriteArrayList<String>()
         try {
             val port = if (tls) 18444 else 18443
+            store.saveRoutes(org.localroute.android.core.ServerRoutes(allTraffic = true))
             val security = if (tls) "tls&allowInsecure=1&sni=localhost" else "none"
             store.save("vless://00000000-0000-4000-8000-000000000000@10.0.2.2:$port?security=$security&type=$transport&path=%2Ftest")
             ContextCompat.startForegroundService(context, Intent(context, CombinedVpnService::class.java).setAction(CombinedVpnService.START_SERVER))
@@ -293,6 +292,7 @@ class NetworkIntegrationTest {
             context.startService(Intent(context, CombinedVpnService::class.java).setAction(CombinedVpnService.STOP_SERVER))
             await { VlessRuntime.state.value.state == TunnelState.Disconnected }
             store.save(oldUri.orEmpty())
+            store.saveRoutes(oldRoutes)
         }
         assertEquals("DIRECT_UNREACHABLE", probe(waitVpn = false))
     }

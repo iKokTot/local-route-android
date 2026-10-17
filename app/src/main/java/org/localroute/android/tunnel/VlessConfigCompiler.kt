@@ -19,16 +19,18 @@ object VlessConfigCompiler {
             VlessTransport.HTTP_UPGRADE -> ",\"transport\":{\"type\":\"httpupgrade\",\"host\":${quote(endpoint.host.orEmpty())},\"path\":${quote(endpoint.path ?: "/")}}"
         }
         val tls = if (endpoint.security == VlessSecurity.NONE) "" else {
+            val utls = endpoint.fingerprint?.let { ",\"utls\":{\"enabled\":true,\"fingerprint\":${quote(it)}}" }.orEmpty()
+            val alpn = if (endpoint.alpn.isEmpty()) "" else ",\"alpn\":" + endpoint.alpn.joinToString(",", "[", "]", transform = ::quote)
             val reality = if (endpoint.security == VlessSecurity.REALITY) {
                 ",\"reality\":{\"enabled\":true,\"public_key\":${quote(endpoint.realityPublicKey.orEmpty())},\"short_id\":${quote(endpoint.realityShortId.orEmpty())}}"
             } else ""
-            ",\"tls\":{\"enabled\":true,\"server_name\":${quote(endpoint.sni ?: endpoint.server)},\"insecure\":${endpoint.allowInsecure}$reality}"
+            ",\"tls\":{\"enabled\":true,\"server_name\":${quote(endpoint.sni ?: endpoint.server)},\"insecure\":${endpoint.allowInsecure}$utls$alpn$reality}"
         }
         val flow = endpoint.flow?.let { ",\"flow\":${quote(it)}" } ?: ""
         return """{"type":"vless","tag":"vless-out","server":${quote(endpoint.server)},"server_port":${endpoint.port},"uuid":${quote(endpoint.uuid)}$flow$tls$transport}"""
     }
 
-    private fun quote(value: String): String = buildString {
+    internal fun quote(value: String): String = buildString {
         append('"')
         value.forEach { char ->
             when (char) {

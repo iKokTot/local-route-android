@@ -7,11 +7,13 @@ enum class TrafficDestination { DIRECT, LOCAL_DPI, SERVER }
 data class CombinedRouting(
     val dpiEnabled: Boolean = false,
     val serverEnabled: Boolean = false,
-    val services: Set<ServiceTarget> = ServiceTarget.entries.toSet()
+    val services: Set<ServiceTarget> = ServiceTarget.entries.toSet(),
+    val customDpiDomains: Set<String> = emptySet(),
+    val serverRoutes: ServerRoutes = ServerRoutes()
 ) {
     val requiresVpn: Boolean get() = dpiEnabled || serverEnabled
     val defaultDestination: TrafficDestination
-        get() = if (serverEnabled) TrafficDestination.SERVER else if (dpiEnabled) TrafficDestination.LOCAL_DPI else TrafficDestination.DIRECT
+        get() = if (serverEnabled && serverRoutes.allTraffic) TrafficDestination.SERVER else TrafficDestination.DIRECT
 
     fun toggle(feature: ConnectionFeature, enabled: Boolean): CombinedRouting = when (feature) {
         ConnectionFeature.DPI -> copy(dpiEnabled = enabled)
@@ -19,17 +21,16 @@ data class CombinedRouting(
     }
 
     fun destinationForPackage(packageName: String): TrafficDestination =
-        if (dpiEnabled && services.any { it.packageName == packageName }) TrafficDestination.LOCAL_DPI
-        else defaultDestination
+        if (serverEnabled && packageName in serverRoutes.packages) TrafficDestination.SERVER else defaultDestination
 
     fun destinationForDomain(domain: String): TrafficDestination {
         val host = domain.trimEnd('.').lowercase(java.util.Locale.ROOT)
         return if (dpiEnabled && domains.any { host == it || host.endsWith(".$it") }) TrafficDestination.LOCAL_DPI
-        else defaultDestination
+        else if (serverEnabled && serverRoutes.domains.any { host == it || host.endsWith(".$it") }) TrafficDestination.SERVER else defaultDestination
     }
 
     val domains: Set<String> get() = services.flatMap { service -> when (service) {
-        ServiceTarget.YOUTUBE -> listOf("youtube.com", "youtu.be", "googlevideo.com", "ytimg.com", "youtubei.googleapis.com", "youtube-nocookie.com")
-        ServiceTarget.DISCORD -> listOf("discord.com", "discord.gg", "discordapp.com", "discordapp.net", "discord.media")
-    } }.toSet()
+        ServiceTarget.YOUTUBE -> listOf("youtube.com", "youtu.be", "youtube-nocookie.com", "youtubekids.com", "googlevideo.com", "ytimg.com", "ggpht.com", "youtube.googleapis.com", "youtubei.googleapis.com", "youtubeembeddedplayer.googleapis.com")
+        ServiceTarget.DISCORD -> listOf("discord.com", "gateway.discord.gg", "cdn.discordapp.com", "updates.discord.com", "discord.gg", "discord.media", "discordapp.com", "discordapp.net", "discordcdn.com", "discordstatus.com", "discord-activities.com", "discordactivities.com", "discord.gift", "discord.gifts", "discord.new", "discord.store", "discord.dev", "discord.co", "dis.gd")
+    } }.toSet() + customDpiDomains
 }

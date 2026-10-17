@@ -15,7 +15,7 @@
         <package android:name="org.telegram.messenger" />
     </queries>
     <application android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
-        android:label="Local Route" android:theme="@style/Theme.LocalRoute">
+        android:label="Local Route Community" android:theme="@style/Theme.LocalRoute">
         <service android:name=".tunnel.CombinedVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false" android:foregroundServiceType="specialUse">
             <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Совместные локальные и серверные маршруты DPI/VLESS"/>

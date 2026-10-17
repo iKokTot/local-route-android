@@ -20,7 +20,9 @@ data class VlessEndpoint(
     val flow: String?,
     val realityPublicKey: String?,
     val realityShortId: String?,
-    val allowInsecure: Boolean
+    val allowInsecure: Boolean,
+    val fingerprint: String? = null,
+    val alpn: List<String> = emptyList()
 )
 
 /** Parses only the VLESS variants that Local Route deliberately supports. */
@@ -50,6 +52,8 @@ object VlessUriParser {
         }
         val publicKey = query["pbk"]?.takeIf { it.isNotBlank() }
         if (security == VlessSecurity.REALITY) require(publicKey != null) { "Для Reality требуется параметр pbk" }
+        val fingerprint = query["fp"]?.takeIf { it.isNotBlank() }
+        require(fingerprint == null || fingerprint in setOf("chrome", "firefox", "edge", "safari", "360", "qq", "ios", "android", "random", "randomized")) { "TLS fingerprint не поддерживается" }
         return VlessEndpoint(
             server = server,
             port = uri.port,
@@ -63,7 +67,9 @@ object VlessUriParser {
             flow = query["flow"]?.takeIf { it.isNotBlank() },
             realityPublicKey = publicKey,
             realityShortId = query["sid"]?.takeIf { it.isNotBlank() },
-            allowInsecure = query["allowInsecure"] == "1"
+            allowInsecure = query["allowInsecure"] == "1",
+            fingerprint = fingerprint ?: if (security == VlessSecurity.REALITY) "chrome" else null,
+            alpn = query["alpn"].orEmpty().split(',').map(String::trim).filter(String::isNotEmpty)
         )
     }
 

@@ -8,7 +8,7 @@ class CombinedRoutingTest {
         for (dpi in listOf(false, true)) for (server in listOf(false, true)) {
             val state = CombinedRouting(dpi, server)
             assertEquals(dpi || server, state.requiresVpn)
-            assertEquals(if (server) TrafficDestination.SERVER else if (dpi) TrafficDestination.LOCAL_DPI else TrafficDestination.DIRECT, state.destinationForDomain("example.com"))
+            assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("example.com"))
             assertEquals(if (dpi) TrafficDestination.LOCAL_DPI else state.defaultDestination, state.destinationForDomain("rr1.googlevideo.com"))
         }
     }
@@ -20,18 +20,18 @@ class CombinedRoutingTest {
     @Test fun domainMatchingIsLabelBoundedAndCaseInsensitive() {
         val state = CombinedRouting(true, true)
         assertEquals(TrafficDestination.LOCAL_DPI, state.destinationForDomain("WWW.YouTube.Com."))
-        assertEquals(TrafficDestination.SERVER, state.destinationForDomain("notyoutube.com"))
-        assertEquals(TrafficDestination.SERVER, state.destinationForDomain("youtube.com.attacker.test"))
+        assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("notyoutube.com"))
+        assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("youtube.com.attacker.test"))
     }
     @Test fun selectionAffectsOnlyChosenServicesIncludingNativePackages() {
         val state = CombinedRouting(true, true, setOf(ServiceTarget.DISCORD))
-        assertEquals(TrafficDestination.SERVER, state.destinationForDomain("youtube.com"))
-        assertEquals(TrafficDestination.LOCAL_DPI, state.destinationForPackage("com.discord"))
-        assertEquals(TrafficDestination.SERVER, state.destinationForPackage("com.google.android.youtube"))
+        assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("youtube.com"))
+        assertEquals(TrafficDestination.DIRECT, state.destinationForPackage("com.discord"))
+        assertEquals(TrafficDestination.DIRECT, state.destinationForPackage("com.google.android.youtube"))
     }
     @Test fun localRouteHasNoAutomaticServerFallback() {
         val state = CombinedRouting(true, true)
         assertEquals(TrafficDestination.LOCAL_DPI, state.destinationForDomain("discord.media"))
-        assertEquals(TrafficDestination.LOCAL_DPI, state.copy(serverEnabled = false).destinationForDomain("example.com"))
+        assertEquals(TrafficDestination.DIRECT, state.copy(serverEnabled = false).destinationForDomain("example.com"))
     }
 }

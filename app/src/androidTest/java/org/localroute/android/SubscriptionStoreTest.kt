@@ -6,6 +6,26 @@ import org.junit.Test
 import org.localroute.android.tunnel.*
 
 class SubscriptionStoreTest {
+    @Test fun refreshedGroupCannotKeepRemovedServerSelected() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val store = VlessStore(context)
+        val oldGroups = store.connectionGroups()
+        val oldUri = store.uri()
+        val first = "vless://00000000-0000-4000-8000-000000000000@one.example:443?security=tls"
+        val second = first.replace("one.example", "two.example")
+        fun group(link: String) = org.json.JSONArray().put(org.json.JSONObject().put("id", "audit")
+            .put("name", "Audit").put("source", "https://example.com/list")
+            .put("links", org.json.JSONArray().put(link)))
+        try {
+            store.saveConnectionGroups(group(first)); store.save(first)
+            store.saveConnectionGroups(group(second))
+            assertNull(store.uri())
+            assertEquals(second, store.connectionGroups().getJSONObject(0).getJSONArray("links").getString(0))
+        } finally {
+            store.saveConnectionGroups(oldGroups)
+            if (oldUri != null) store.save(oldUri) else store.clearSelection()
+        }
+    }
     @Test fun encryptedListSurvivesRecreationAndFailureKeepsSelectedProfile() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val store = VlessStore(context)

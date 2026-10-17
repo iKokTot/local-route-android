@@ -14,16 +14,46 @@ class VlessStore(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
+    fun routes(): org.localroute.android.core.ServerRoutes {
+        val defaults = org.localroute.android.core.ServerRoutes()
+        return org.localroute.android.core.ServerRoutes(prefs.getBoolean("route_all_v2", false),
+            prefs.getStringSet("route_domains_v2", defaults.domains).orEmpty().toSet(),
+            prefs.getStringSet("route_packages_v2", emptySet()).orEmpty().toSet())
+    }
+    fun saveRoutes(routes: org.localroute.android.core.ServerRoutes) {
+        check(prefs.edit().putBoolean("route_all_v2", routes.allTraffic).putStringSet("route_domains_v2", routes.domains)
+            .putStringSet("route_packages_v2", routes.packages).commit()) { "Не удалось сохранить маршруты" }
+    }
     fun uri(): String? = prefs.getString(KEY_URI, null)
+    fun connectionGroups(): org.json.JSONArray {
+        val stored = prefs.getString("connection_groups_v2", null)
+        if (stored != null) return org.json.JSONArray(stored)
+        val profiles = profiles()
+        if (profiles.isEmpty()) return org.json.JSONArray()
+        return org.json.JSONArray().put(org.json.JSONObject().put("id", "legacy").put("name", "Мои подключения")
+            .put("source", source()).put("links", org.json.JSONArray(profiles.map { it.link })))
+    }
+    fun saveConnectionGroups(groups: org.json.JSONArray) {
+        require(groups.length() <= 16)
+        val links = (0 until groups.length()).flatMap { index ->
+            val values = groups.getJSONObject(index).getJSONArray("links")
+            (0 until values.length()).map(values::getString)
+        }.toSet()
+        val edit = prefs.edit().putString("connection_groups_v2", groups.toString()).remove("profiles_v1").remove("source_v1")
+        if (uri() != null && uri() !in links) edit.remove(KEY_URI)
+        check(edit.commit()) { "Не удалось сохранить подписки" }
+    }
+    fun clearSelection() { check(prefs.edit().remove(KEY_URI).commit()) { "Не удалось удалить выбор сервера" } }
     fun profiles(): List<VlessProfile> = VlessSubscriptionParser.parse(prefs.getString("profiles_v1", "").orEmpty()).ifEmpty {
         uri()?.let { runCatching { listOf(VlessProfile(it, VlessUriParser.parse(it))) }.getOrNull() }.orEmpty()
     }
     fun source(): String = prefs.getString("source_v1", "").orEmpty()
     fun importProfiles(profiles: List<VlessProfile>, source: String = "") {
         require(profiles.isNotEmpty())
-        prefs.edit().putString("profiles_v1", profiles.joinToString("\n") { it.link })
-            .putString("source_v1", source).commit()
+        check(prefs.edit().putString("profiles_v1", profiles.joinToString("\n") { it.link })
+            .putString("source_v1", source).commit()) { "Не удалось сохранить подписку" }
     }
+    fun clear() { check(prefs.edit().clear().commit()) { "Не удалось удалить подключения" } }
     fun remove(link: String) {
         val remaining = profiles().filterNot { it.link == link }
         prefs.edit().putString("profiles_v1", remaining.joinToString("\n") { it.link }).apply()

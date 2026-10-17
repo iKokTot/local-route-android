@@ -15,6 +15,13 @@ class ProfileStore(context: Context) {
     fun clearLastSuccessfulStrategy() = prefs.edit().remove("last_user_confirmed_strategy_v2").apply()
     fun customCommand(): String = prefs.getString("custom_byedpi_command", "") ?: ""
     fun saveCustomCommand(command: String) = prefs.edit().putString("custom_byedpi_command", command).apply()
+    fun customDomains(): Set<String> = prefs.getStringSet("custom_dpi_domains", emptySet()).orEmpty().toSet()
+    fun saveCustomDomains(domains: Set<String>) = prefs.edit().putStringSet("custom_dpi_domains", domains).commit()
+    fun dpiTrial(): org.localroute.android.core.DpiTrialPlan = org.localroute.android.core.DpiTrialPlan(
+        prefs.getStringSet("dpi_trial_tried", emptySet()).orEmpty().toSet(), prefs.getString("dpi_trial_candidate", null))
+    fun saveDpiTrial(plan: org.localroute.android.core.DpiTrialPlan) {
+        check(prefs.edit().putStringSet("dpi_trial_tried", plan.tried).putString("dpi_trial_candidate", plan.candidate).commit())
+    }
     fun selectedServices(): Set<ServiceTarget> {
         val saved = prefs.getStringSet("selected_services", null) ?: return ServiceTarget.entries.toSet()
         return saved.mapNotNull { value -> ServiceTarget.entries.firstOrNull { it.name == value } }.toSet()

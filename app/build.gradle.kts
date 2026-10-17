@@ -13,9 +13,10 @@ val releaseSigningProperties = Properties().apply {
 android {
     namespace = "org.localroute.android"
     compileSdk = 35
+    testBuildType = providers.gradleProperty("androidTestBuildType").getOrElse("release")
     // Match the toolchain used by the proven ByeDPIAndroid 1.2 build.
     ndkVersion = "25.1.8937393"
-    defaultConfig { applicationId = "org.localroute.android"; minSdk = 26; targetSdk = 35; versionCode = 23; versionName = "0.23.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") } }
+    defaultConfig { applicationId = "org.localroute.community"; minSdk = 26; targetSdk = 35; versionCode = 25; versionName = "0.24.1"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") } }
     sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/tgwsJniLibs"))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -141,3 +142,11 @@ val prepareTgws = tasks.register("prepareTgws") {
     }
 }
 tasks.named("preBuild").configure { dependsOn(prepareTgws) }
+
+// Use the reviewed UI in this repository, independent of sibling desktop folders.
+val sharedUiSource = rootProject.file("shared-ui")
+val prepareSharedUi = tasks.register<Sync>("prepareSharedUi") {
+    from(sharedUiSource)
+    into("src/main/assets/ui")
+}
+tasks.named("preBuild").configure { dependsOn(prepareSharedUi) }
