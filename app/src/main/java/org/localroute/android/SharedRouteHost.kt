@@ -35,6 +35,22 @@ class SharedRouteHost(
     private val profile = ProfileStore(activity)
     private val servers = VlessStore(activity)
     private val telegram = TelegramProxySettings(activity)
+    private val installedApps by lazy {
+        val manager = activity.packageManager
+        manager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+            .distinctBy { it.activityInfo.packageName }.filter { it.activityInfo.packageName != activity.packageName }
+            .map { info ->
+                val icon = runCatching {
+                    val drawable = info.loadIcon(manager)
+                    val bitmap = android.graphics.Bitmap.createBitmap(48, 48, android.graphics.Bitmap.Config.ARGB_8888)
+                    drawable.setBounds(0, 0, 48, 48); drawable.draw(android.graphics.Canvas(bitmap))
+                    val bytes = java.io.ByteArrayOutputStream()
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bytes); bitmap.recycle()
+                    "data:image/png;base64," + android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP)
+                }.getOrDefault("")
+                Triple(info.activityInfo.packageName, info.loadLabel(manager).toString(), icon)
+            }.sortedBy { it.second.lowercase() }
+    }
     private var operation: Job? = null
     private var operationName: String? = null
     private var pendingMode: Int? = null
@@ -164,6 +180,11 @@ class SharedRouteHost(
                 .put("name",candidates.firstOrNull { it.id==trial.candidate }?.title ?: ""))
             .put("dpiCommand",profile.customCommand().ifBlank { AndroidStrategies.BYEDPI_ANDROID_TCP_UDP_COMMAND })
             .put("active",dpiActive()).put("vlessActive",vpnActive()).put("vlessConfigured",!current.isNullOrBlank())
+            .put("networkAvailable",CombinedRuntime.state.value.networkAvailable ?: JSONObject.NULL)
+            .put("vpnCheck",JSONObject().put("verified",VlessRuntime.state.value.verified ?: JSONObject.NULL)
+                .put("checkedAt",VlessRuntime.state.value.checkedAt ?: JSONObject.NULL))
+            .put("telegramVerified",tg.verified ?: JSONObject.NULL)
+            .put("telegramCheckMessage",tg.message)
             .put("telegramActive",tgActive()).put("telegramBusy",tg.phase==TelegramProxyPhase.STARTING).put("telegramError",if(tg.phase==TelegramProxyPhase.ERROR)tg.message else "")
             .put("telegram",JSONObject().put("port",telegram.port()).put("enabled",telegram.jointStart()))
             .put("vlessServers",serverList).put("vlessSubscriptions",groups).put("vlessSubscriptionSaved",(0 until stored.length()).any { stored.getJSONObject(it).optString("source").isNotBlank() })
@@ -171,7 +192,11 @@ class SharedRouteHost(
             .put("diagnostics",diagnostic).put("logs",array(logs.takeLast(100))).put("appLibrary",appLibrary())
             .put("bypassApps", JSONArray().also { list ->
                 val selected=org.localroute.android.data.VpnExclusions(activity).packages()
-                RecommendedBypassApps.apps.forEach { (key,name) -> list.put(JSONObject().put("id",key).put("name",name).put("selected",key in selected)) }
+                val known = installedApps.associateBy { it.first }
+                installedApps.forEach { (key,name,icon) -> list.put(JSONObject().put("id",key).put("name",name).put("icon",icon).put("installed",true).put("selected",key in selected)) }
+                (RecommendedBypassApps.packages + selected).filter { it !in known }.sorted().forEach { key ->
+                    list.put(JSONObject().put("id",key).put("name",RecommendedBypassApps.apps[key] ?: key).put("icon","").put("installed",false).put("selected",key in selected))
+                }
             })
     }
     private fun appLibrary(): JSONArray {
@@ -192,7 +217,10 @@ class SharedRouteHost(
                 if(changed) { profile.clearLastSuccessfulStrategy(); profile.saveDpiTrial(DpiTrialPlan()) }
             }
             "saveDpiCommand" -> { check(!dpiActive()); val command=payload as? String ?: ""; require(AndroidStrategies.custom(command)!=null); profile.saveCustomCommand(command); profile.clearLastSuccessfulStrategy(); profile.saveDpiTrial(DpiTrialPlan()) }
-            "saveBypassApps" -> { check(!vpnActive()); val selected=strings(payload as? JSONArray).toSet(); require(RecommendedBypassApps.packages.containsAll(selected)); org.localroute.android.data.VpnExclusions(activity).save(selected) }
+            "saveBypassApps" -> { check(!vpnActive()); val selected=strings(payload as? JSONArray).toSet()
+                val exclusions=org.localroute.android.data.VpnExclusions(activity)
+                require((RecommendedBypassApps.packages + installedApps.map { it.first } + exclusions.packages()).containsAll(selected))
+                exclusions.save(selected) }
             "confirmDpi" -> {
                 val trial=profile.dpiTrial(); val candidate=requireNotNull(trial.candidate)
                 check(LocalDpiRuntime.state.value.phase==EnginePhase.ACTIVE && LocalDpiRuntime.state.value.strategyId==candidate)
@@ -236,6 +264,7 @@ class SharedRouteHost(
                     if(started) startServer()
                     val results=runInterruptible(Dispatchers.IO) { ServerConnectionProbe.probe() }
                     val ok=results.any { it.success }
+                    VlessRuntime.checked(ok)
                     return response(if(ok)"Получен HTTPS-ответ через сервер. Проверьте нужные приложения." else "Проверочные адреса не ответили. Это не доказывает, что все приложения недоступны: попробуйте открыть нужный сервис.").put("ok",ok)
                         .put("results",JSONArray().also { rows -> results.forEach { rows.put(JSONObject().put("label",it.host).put("success",it.success).put("detail",it.detail).put("durationMs",0)) } })
                 } finally { if(started) { stopVpn(); withContext(NonCancellable) { awaitStopped(vpn=true) } } }
@@ -322,10 +351,12 @@ class SharedRouteHost(
         currentCoroutineContext().ensureActive()
         var result=before
         updates.forEach { (source,links) -> result=mergeGroup(result,links,source) }
-        servers.saveConnectionGroups(result)
+        val previous=servers.uri()
+        val retained=previous != null && (0 until result.length()).none { previous in links(result.getJSONObject(it)) }
+        servers.saveConnectionGroups(result, preserveSelection=true)
         val available=profiles()
         if(servers.uri().isNullOrBlank() && available.size==1) servers.save(available.single().link)
-        return response("Список обновлён. Поддерживаются VLESS-серверы; другие протоколы пропущены.")
+        return response(if(retained) "Подписка обновлена. Выбранный сервер исчез из списка и сохранён отдельно. Он не заменён автоматически." else "Подключения добавлены. Выберите сервер и нажмите «Подключить».")
     }
     private fun mergeGroup(before: JSONArray, links: List<String>, source: String): JSONArray {
         val key=id("group:"+(source.ifBlank { links.joinToString("\n") }))

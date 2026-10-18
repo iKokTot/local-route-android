@@ -19,7 +19,7 @@ android {
     defaultConfig {
         applicationId = providers.gradleProperty("applicationId").getOrElse("org.localroute.community")
         manifestPlaceholders["applicationLabel"] = providers.gradleProperty("applicationLabel").getOrElse("Local Route")
-        minSdk = 26; targetSdk = 35; versionCode = 30; versionName = "0.24.6"
+        minSdk = 26; targetSdk = 35; versionCode = 31; versionName = "0.24.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }

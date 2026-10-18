@@ -23,7 +23,7 @@ class VlessStore(context: Context) {
         check(prefs.edit().putBoolean("route_all_v2", routes.allTraffic).putStringSet("route_domains_v2", routes.domains)
             .putStringSet("route_packages_v2", routes.packages).commit()) { "Не удалось сохранить маршруты" }
     }
-    fun uri(): String? = prefs.getString(KEY_URI, null)
+    fun uri(): String? = prefs.getString(KEY_URI, null)?.takeIf { it.isNotBlank() }
     fun connectionGroups(): org.json.JSONArray {
         val stored = prefs.getString("connection_groups_v2", null)
         if (stored != null) return org.json.JSONArray(stored)
@@ -32,14 +32,24 @@ class VlessStore(context: Context) {
         return org.json.JSONArray().put(org.json.JSONObject().put("id", "legacy").put("name", "Мои подключения")
             .put("source", source()).put("links", org.json.JSONArray(profiles.map { it.link })))
     }
-    fun saveConnectionGroups(groups: org.json.JSONArray) {
-        require(groups.length() <= 16)
+    fun saveConnectionGroups(groups: org.json.JSONArray, preserveSelection: Boolean = false) {
+        require(groups.length() <= 17)
         val links = (0 until groups.length()).flatMap { index ->
             val values = groups.getJSONObject(index).getJSONArray("links")
             (0 until values.length()).map(values::getString)
         }.toSet()
-        val edit = prefs.edit().putString("connection_groups_v2", groups.toString()).remove("profiles_v1").remove("source_v1")
-        if (uri() != null && uri() !in links) edit.remove(KEY_URI)
+        val selected = uri()
+        // A subscription refresh must not destroy the user's last selected connection.
+        // Keep it explicitly labelled, not falsely presented as part of the new subscription.
+        val output = org.json.JSONArray(groups.toString())
+        if (preserveSelection && selected != null && selected !in links) {
+            VlessUriParser.parse(selected)
+            output.put(org.json.JSONObject().put("id", "saved-selection").put("name", "Сохранённый сервер · отсутствует в подписке")
+                .put("source", "").put("links", org.json.JSONArray().put(selected)))
+        }
+        require(output.length() <= 17)
+        val edit = prefs.edit().putString("connection_groups_v2", output.toString()).remove("profiles_v1").remove("source_v1")
+        if (!preserveSelection && selected != null && selected !in links) edit.remove(KEY_URI)
         check(edit.commit()) { "Не удалось сохранить подписки" }
     }
     fun clearSelection() { check(prefs.edit().remove(KEY_URI).commit()) { "Не удалось удалить выбор сервера" } }

@@ -31,8 +31,32 @@ class TelegramProxyService : LifecycleService() {
     private var generation = 0
     private var reconnectJob: Job? = null
     private var lastRoute: String? = null
+    private var lastNetwork: android.net.Network? = null
+    private val connectivity by lazy { getSystemService(android.net.ConnectivityManager::class.java) }
+    private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) { networkChanged() }
+        override fun onLost(network: android.net.Network) { networkChanged(network) }
+        override fun onCapabilitiesChanged(network: android.net.Network, capabilities: android.net.NetworkCapabilities) { networkChanged() }
+    }
+    private fun networkChanged(lost: android.net.Network? = null) { lifecycleScope.launch {
+        val candidates = connectivity.allNetworks.mapNotNull { network ->
+            if(network == lost) return@mapNotNull null
+            val caps=connectivity.getNetworkCapabilities(network) ?: return@mapNotNull null
+            if(!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN) || !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) return@mapNotNull null
+            org.localroute.android.core.PhysicalNetworkSelection.Candidate(network,caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+        }
+        val next=org.localroute.android.core.PhysicalNetworkSelection.choose(candidates,connectivity.activeNetwork,lastNetwork)
+        if(next != lastNetwork) {
+            lastNetwork=next
+            if(ownsProxy && next != null) reconnect()
+            else if(ownsProxy) { generation++; TelegramProxyRuntime.checked("Нет подключения к интернету. Прокси ждёт сеть.",false) }
+        }
+    } }
     override fun onCreate() {
         super.onCreate()
+        connectivity.registerNetworkCallback(android.net.NetworkRequest.Builder()
+            .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build(),networkCallback)
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "Telegram-прокси", NotificationManager.IMPORTANCE_LOW))
         lifecycleScope.launch {
             TelegramProxyRuntime.state.collect { state ->
@@ -110,6 +134,7 @@ class TelegramProxyService : LifecycleService() {
         else startForeground(18, notification)
     }
     override fun onDestroy() {
+        runCatching { connectivity.unregisterNetworkCallback(networkCallback) }
         generation++
         if (ownsProxy) runCatching { NativeProxy.nativeStop() }
         ownsProxy = false

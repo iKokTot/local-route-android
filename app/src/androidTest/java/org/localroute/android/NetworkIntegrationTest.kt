@@ -14,6 +14,59 @@ import org.localroute.android.tunnel.*
 
 @RunWith(AndroidJUnit4::class)
 class NetworkIntegrationTest {
+    @Test fun telegramStopAndScreenLockDoNotStopCombinedVpn() {
+        foreground()
+        val store=VlessStore(context); val previous=store.uri()
+        fun shell(command: String) { InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command).use { descriptor -> java.io.FileInputStream(descriptor.fileDescriptor).readBytes() } }
+        try {
+            store.save("vless://00000000-0000-4000-8000-000000000000@10.0.2.2:18443?security=none&type=ws&path=%2Ftest")
+            ContextCompat.startForegroundService(context,Intent(context,CombinedVpnService::class.java).setAction(CombinedVpnService.START_SERVER))
+            await { VlessRuntime.state.value.state==TunnelState.Connected }
+            ContextCompat.startForegroundService(context,Intent(context,CombinedVpnService::class.java).setAction(CombinedVpnService.START_DPI))
+            await { org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase==org.localroute.android.localdpi.EnginePhase.ACTIVE }
+            ContextCompat.startForegroundService(context,Intent(context,TelegramProxyService::class.java).setAction(TelegramProxyService.START))
+            await { TelegramProxyRuntime.state.value.phase==TelegramProxyPhase.LISTENING }
+            context.startService(Intent(context,TelegramProxyService::class.java).setAction(TelegramProxyService.STOP))
+            await { TelegramProxyRuntime.state.value.phase==TelegramProxyPhase.STOPPED }
+            assertTrue(CombinedRuntime.state.value.plan.dpiEnabled)
+            assertTrue(CombinedRuntime.state.value.plan.serverEnabled)
+            shell("input keyevent 223")
+            Thread.sleep(2000)
+            assertEquals("local-route-vless-fixture",probe())
+            shell("input keyevent 224"); shell("wm dismiss-keyguard")
+        } finally {
+            shell("input keyevent 224"); shell("wm dismiss-keyguard")
+            context.startService(Intent(context,TelegramProxyService::class.java).setAction(TelegramProxyService.STOP))
+            context.startService(Intent(context,CombinedVpnService::class.java).setAction(CombinedVpnService.STOP_ALL))
+            await { !CombinedRuntime.state.value.plan.requiresVpn && !CombinedRuntime.state.value.busy }
+            if(previous==null)store.clearSelection() else store.save(previous)
+        }
+    }
+    @Test fun combinedSurvivesNetworkLossAndReconnectsWithoutRestart() {
+        org.junit.Assume.assumeTrue(android.os.Build.FINGERPRINT.contains("generic") || android.os.Build.MODEL.contains("sdk"))
+        foreground()
+        val store=VlessStore(context); val previous=store.uri()
+        fun shell(command: String) { InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command).use { descriptor -> java.io.FileInputStream(descriptor.fileDescriptor).readBytes() } }
+        try {
+            store.save("vless://00000000-0000-4000-8000-000000000000@10.0.2.2:18443?security=none&type=ws&path=%2Ftest")
+            ContextCompat.startForegroundService(context,Intent(context,CombinedVpnService::class.java).setAction(CombinedVpnService.START_SERVER))
+            await { VlessRuntime.state.value.state==TunnelState.Connected && CombinedRuntime.state.value.networkAvailable==true }
+            assertEquals("local-route-vless-fixture",probe())
+            VlessRuntime.checked(true)
+            shell("svc data disable"); shell("svc wifi disable")
+            await { CombinedRuntime.state.value.networkAvailable==false }
+            assertEquals(TunnelState.Connected,VlessRuntime.state.value.state)
+            assertNull(VlessRuntime.state.value.verified)
+            shell("svc wifi enable"); shell("svc data enable")
+            await(45000) { CombinedRuntime.state.value.networkAvailable==true }
+            await(45000) { runCatching { probe()=="local-route-vless-fixture" }.getOrDefault(false) }
+        } finally {
+            shell("svc wifi enable"); shell("svc data enable")
+            context.startService(Intent(context,CombinedVpnService::class.java).setAction(CombinedVpnService.STOP_ALL))
+            await { !CombinedRuntime.state.value.plan.requiresVpn && !CombinedRuntime.state.value.busy }
+            if(previous==null)store.clearSelection() else store.save(previous)
+        }
+    }
     @Test fun multiAddressProbeDoesNotConfuseFixtureWithInternetAccess() {
         foreground()
         val store=VlessStore(context)

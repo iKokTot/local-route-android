@@ -77,6 +77,9 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
     private var testPackage: String? = null
     private var openingServerEnabled = false
     private var diagnosticClient: io.nekohasekai.libbox.CommandClient? = null
+    private var physicalNetwork: Network? = null
+    private var physicalInterface: String? = null
+    private var networkRevision = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -147,9 +150,9 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
                 it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) && it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             } == true
         }
-        val physical = networks.firstOrNull { it == connectivityManager.activeNetwork }
-            ?: networks.firstOrNull { connectivityManager.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true }
-            ?: networks.firstOrNull()
+        val physical = PhysicalNetworkSelection.choose(networks.map {
+            PhysicalNetworkSelection.Candidate(it, connectivityManager.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true)
+        }, connectivityManager.activeNetwork, physicalNetwork)
         val dns = PhysicalDns.choose(physical?.let { connectivityManager.getLinkProperties(it)?.dnsServers?.mapNotNull { address -> address.hostAddress } }.orEmpty())
         val password = if (next.serverEnabled) VlessGateway.password ?: VlessGateway.prepare() else null
         if (org.localroute.android.BuildConfig.DEBUG && intent?.hasExtra("test_package") == true) testPackage = intent.getStringExtra("test_package")
@@ -165,10 +168,17 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
                 val code = runCatching { proxy.startProxy(requireNotNull(requestedStrategy).nativeArguments.toTypedArray()) }.getOrElse { -1 }
                 scope.launch {
                     if (generation == proxyGeneration && !shuttingDown) sessionMutex.withLock {
-                        withContext(Dispatchers.IO) { runCatching { shutdown() } }
-                        LocalDpiRuntime.update(EnginePhase.ERROR, "Локальный движок завершился: $code. VPN остановлен.")
-                        VlessRuntime.update(TunnelState.Error("DPI worker exited"), "Общий VPN остановлен из-за ошибки DPI")
-                        stopForeground(STOP_FOREGROUND_REMOVE); notifyFailure(); stopSelf()
+                        // A local worker failure must not unnecessarily stop a healthy server mode.
+                        val retainedServer = plan.serverEnabled && runCatching {
+                            withContext(Dispatchers.IO) { applyCommand(Intent().setAction(STOP_DPI), 0) }
+                        }.isSuccess
+                        if (!retainedServer) {
+                            withContext(Dispatchers.IO) { runCatching { shutdown() } }
+                            stopForeground(STOP_FOREGROUND_REMOVE); notifyFailure(); stopSelf()
+                        }
+                        LocalDpiRuntime.update(EnginePhase.ERROR, if (retainedServer)
+                            "DPI завершился: $code. Серверный VPN продолжает работать." else "Локальный движок завершился: $code. VPN остановлен.")
+                        CombinedRuntime.completed(plan)
                     }
                 }
             }
@@ -331,6 +341,8 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
             runCatching { connectivityManager.unregisterNetworkCallback(callback) }
         }
         networkCallback = null
+        physicalNetwork = null
+        physicalInterface = null
     }
     override fun closeNeighborMonitor(listener: NeighborUpdateListener) = Unit
     override fun createBridge(options: BridgeOptions): BridgeSession = throw UnsupportedOperationException("Bridge не используется")
@@ -380,8 +392,9 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
         defaultInterfaceListener = listener
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) = updateDefaultInterface(network)
-            override fun onLost(network: Network) = updateDefaultInterface(connectivityManager.activeNetwork)
+            override fun onLost(network: Network) = updateDefaultInterface(network, lost = true)
             override fun onLinkPropertiesChanged(network: Network, properties: android.net.LinkProperties) = updateDefaultInterface(network)
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = updateDefaultInterface(network)
         }
         networkCallback = callback
         // The global default can become our own VPN, even though our UID is excluded.
@@ -412,14 +425,35 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
     override fun triggerNativeCrash() = Unit
     override fun writeDebugMessage(message: String) = Unit
 
-    private fun updateDefaultInterface(network: Network?) {
+    private fun updateDefaultInterface(network: Network?, lost: Boolean = false) {
         val listener = defaultInterfaceListener ?: return
-        val physical = network?.takeIf { connectivityManager.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true }
-            ?: connectivityManager.allNetworks.firstOrNull { connectivityManager.getNetworkCapabilities(it)?.let { caps ->
-                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            } == true }
+        val candidates = connectivityManager.allNetworks.mapNotNull { candidate ->
+            if (lost && candidate == network) return@mapNotNull null
+            val caps = connectivityManager.getNetworkCapabilities(candidate) ?: return@mapNotNull null
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) ||
+                !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return@mapNotNull null
+            PhysicalNetworkSelection.Candidate(candidate, caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+        }
+        val physical = PhysicalNetworkSelection.choose(candidates, connectivityManager.activeNetwork, physicalNetwork)
+        CombinedRuntime.networkAvailable(physical != null)
         val interfaceName = physical?.let { connectivityManager.getLinkProperties(it)?.interfaceName }.orEmpty()
         val index = runCatching { JavaNetworkInterface.getByName(interfaceName)?.index ?: -1 }.getOrDefault(-1)
+        if (physical != physicalNetwork || physicalInterface != interfaceName) {
+            val initialized = physicalInterface != null
+            physicalNetwork = physical
+            physicalInterface = interfaceName
+            val revision = ++networkRevision
+            VlessRuntime.clearCheck()
+            VpnDiagnostics.add(if (physical == null) "Нет физической сети. Ожидаем подключения." else "Исходящая сеть изменена: $interfaceName")
+            setUnderlyingNetworks(physical?.let { arrayOf(it) })
+            // Recompile physical DNS too: a Wi-Fi resolver is often unreachable on cellular.
+            // Coalesce bursts; initial monitor callbacks during reload must not trigger a loop.
+            if (initialized && physical != null && plan.requiresVpn) scope.launch {
+                delay(750)
+                if (revision == networkRevision && owner === this@CombinedVpnService && plan.requiresVpn && !shuttingDown)
+                    startService(Intent(this@CombinedVpnService, CombinedVpnService::class.java).setAction(RELOAD))
+            }
+        }
         listener.updateDefaultInterface(interfaceName, index, false, false)
     }
 

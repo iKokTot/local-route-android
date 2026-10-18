@@ -256,7 +256,16 @@ function renderState() {
     $('#dpi-strategy-description').textContent=state.dpiTrial?.pendingConfirmation ? 'Запущен кандидат, он ещё не сохранён как рабочий. Проверьте видео и голос, затем выберите результат ниже.' : state.verifiedStrategy ? 'Профиль сохранён после вашей проверки. Можно запустить его или начать новую проверку вариантов.' : 'Профили проверяются вами по очереди: запустите вариант, откройте сервис и выберите результат ниже.';
     $('#dpi-trial-status').textContent=state.dpiTrial?.candidate ? 'Вариант '+state.dpiTrial.attempt+' из '+state.dpiTrial.total+': '+state.dpiTrial.name+'. Если не работает — нажмите следующий вариант.' : 'Здесь появятся кнопки оценки запущенного варианта. Повторный запуск сохранённого профиля сам по себе не ищет другой.';
     if(state.dpiTrial?.pendingConfirmation)status('#dpi-strategy-state','Нужна ваша проверка','waiting');
-    $('#dpi-detail').textContent=state.active ? 'Локальный обход включён' : (state.verifiedStrategy ? 'Профиль сохранён' : 'Подберите профиль на вкладке DPI');
+    $('#dpi-detail').textContent=state.active ? 'Движок запущен. Проверьте видео или голосовой чат.' : (state.verifiedStrategy ? 'Профиль сохранён' : 'Подберите профиль на вкладке DPI');
+    const checked = state.vpnCheck?.verified;
+    status('#vless-state', state.vlessActive ? 'Движок запущен' : (state.vlessConfigured ? 'Готов к подключению' : 'Не настроен'), state.vlessActive ? 'active' : '');
+    $('#vless-detail').textContent = state.vlessActive ? (checked === true ? 'HTTPS-ответ получен при последней проверке. Это не проверка всех приложений.' : checked === false ? 'Проверочные сайты не ответили. Проверьте нужное приложение или другой сервер.' : 'Соединение ещё не проверено. Нажмите «Проверить соединение».') : (state.vlessConfigured ? 'Сервер выбран. Весь интернет через VPN, исключения — напрямую.' : 'Добавьте ссылку → выберите сервер → подключите VPN.');
+    $('#telegram-detail').textContent = state.telegramActive ? (state.telegramVerified === true ? 'Тестовый узел ответил. Подключите прокси в Telegram и проверьте сообщения.' : 'Локальный прокси запущен. Это ещё не подтверждает загрузку сообщений.') : (state.telegramError || 'После запуска подключите прокси в Telegram.');
+    if(state.telegramActive && state.telegramVerified === false) $('#telegram-detail').textContent=state.telegramCheckMessage || 'Прокси запущен, но Telegram пока не ответил.';
+    if(state.networkAvailable === false) {
+      if(state.vlessActive) {status('#vless-state','Ожидание сети','waiting');$('#vless-detail').textContent='Нет подключения к интернету. VPN остаётся запущенным и ждёт сеть.';}
+      if(state.active) $('#dpi-detail').textContent='Нет подключения к интернету. DPI ждёт сеть.';
+    }
   }
   $('#autostart-toggle').checked = Boolean(state.autoStart);
   $('#autostart-description').textContent = `${state.autoStart ? 'При входе в Windows запустятся' : 'При включении будут запускаться'}: ${ready.join(', ') || 'пока нет настроенных компонентов'}. Приложение останется в трее.`;
@@ -311,7 +320,12 @@ function configurePlatform() {
   // Скрытая Windows-разметка остаётся для общего контроллера, но не входит в поток страницы.
   const windows=document.createElement('div');windows.className='hidden';windows.append(startup);
   $('#page-content').append(windows);
-  const bypass=document.createElement('details');bypass.className='advanced';bypass.innerHTML='<summary>Приложения напрямую, вне VPN</summary><p class="setting-description">Выбранные приложения исключены из Android TUN. Остановите VPN перед изменением.</p><div class="app-list">'+(state.bypassApps || []).map(item=>'<label class="service"><input type="checkbox" class="bypass-app" value="'+escapeHtml(item.id)+'" '+(item.selected?'checked':'')+'><span>'+escapeHtml(item.name)+'</span></label>').join('')+'</div>';general.append(bypass);
+  const bypass=document.createElement('details');bypass.className='advanced';bypass.innerHTML='<summary>Приложения напрямую, вне VPN</summary><p class="setting-description">Эти приложения работают без VPN.</p><label for="bypass-search">Найти приложение</label><input id="bypass-search" type="search" placeholder="Название приложения"><div class="app-list">'+(state.bypassApps || []).map(item=>'<label class="service bypass-row" data-search="'+escapeHtml(item.name.toLowerCase())+'"><input type="checkbox" class="bypass-app" value="'+escapeHtml(item.id)+'" '+(item.selected?'checked':'')+'>'+(item.icon && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.icon)?'<img width="32" height="32" alt="" src="'+item.icon+'">':'')+'<span>'+escapeHtml(item.name)+(item.installed?'':'<small>Не установлено · правило на будущее</small>')+'</span></label>').join('')+'</div><p id="bypass-empty" class="hidden setting-description">Приложение не найдено.</p>';general.append(bypass);
+  $('#bypass-search').addEventListener('input',event=>{
+    const query=event.target.value.trim().toLowerCase();let visible=0;
+    all('.bypass-row').forEach(row=>{const match=row.dataset.search.includes(query);row.classList.toggle('hidden',!match);if(match)visible++;});
+    $('#bypass-empty').classList.toggle('hidden',visible>0);
+  });
   $('#android-dpi-profile').classList.remove('hidden');
   $('#android-dpi-feedback').classList.remove('hidden');
   $('#strategy-tests').closest('details').querySelector('.setting-description').textContent='Выбранный вариант включится для вашей проверки. Если видео или голос не работают, нажмите «Не работает — следующий». Рабочий профиль сохраняется только после подтверждения.';

@@ -15,6 +15,32 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
+    @Test fun runningAndVerifiedAreDifferentStates() {
+        attach()
+        js("window.savedAuditState=state;state={...state,vlessActive:true,vlessConfigured:true,vpnCheck:{verified:null},networkAvailable:true};renderState()")
+        try {
+            assertEquals("Движок запущен",js("document.querySelector('#vless-state').textContent"))
+            assertEquals(true,js("document.querySelector('#vless-detail').textContent.includes('ещё не проверено')"))
+            js("state={...state,networkAvailable:false};renderState()")
+            assertEquals("Ожидание сети",js("document.querySelector('#vless-state').textContent"))
+            js("state={...state,networkAvailable:true,vpnCheck:{verified:true}};renderState()")
+            assertEquals(true,js("document.querySelector('#vless-detail').textContent.includes('не проверка всех приложений')"))
+        } finally { js("state=savedAuditState;renderState()") }
+    }
+    @Test fun exceptionsHaveSearchIconsAndOneConnectionEditor() {
+        attach()
+        js("navigate('routes');document.querySelector('.vpn-exceptions').open=true")
+        assertEquals(true,js("Boolean(document.querySelector('#bypass-search'))"))
+        assertEquals(true,js("state.bypassApps.some(app=>app.installed && app.icon.startsWith('data:image/png;base64,'))"))
+        js("document.querySelector('#bypass-search').value='no-such-installed-app-123';document.querySelector('#bypass-search').dispatchEvent(new Event('input'))")
+        assertEquals(true,js("!document.querySelector('#bypass-empty').classList.contains('hidden')"))
+        assertEquals(0,js("document.querySelectorAll('.bypass-row:not(.hidden)').length"))
+        js("document.querySelector('#bypass-search').value='';document.querySelector('#bypass-search').dispatchEvent(new Event('input'));document.querySelector('#open-subscription').click()")
+        assertEquals(true,js("document.querySelector('#subscription-dialog').open"))
+        assertEquals(true,js("document.querySelector('#subscription-input').placeholder.includes('https://')"))
+        assertEquals(true,js("document.querySelector('#single-server-editor').classList.contains('hidden')"))
+        js("document.querySelector('#subscription-dialog').close();navigate('control')")
+    }
     @Test fun localRouteNameAndDistinctNavigationSurface() {
         attach()
         assertEquals("Local Route",instrumentation.targetContext.applicationInfo.loadLabel(instrumentation.targetContext.packageManager).toString())

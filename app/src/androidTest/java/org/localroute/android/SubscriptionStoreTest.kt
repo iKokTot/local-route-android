@@ -6,6 +6,33 @@ import org.junit.Test
 import org.localroute.android.tunnel.*
 
 class SubscriptionStoreTest {
+    @Test fun blankLegacySelectionDoesNotBlockImport() {
+        val store=VlessStore(InstrumentationRegistry.getInstrumentation().targetContext)
+        val before=store.connectionGroups(); val selected=store.uri()
+        try {
+            store.save("")
+            assertNull(store.uri())
+            store.saveConnectionGroups(org.json.JSONArray(),preserveSelection=true)
+            assertNull(store.uri())
+        } finally {
+            store.saveConnectionGroups(before)
+            if(selected==null)store.clearSelection() else store.save(selected)
+        }
+    }
+    @Test fun refreshRetainsSelectedServerSeparately() {
+        val store = VlessStore(InstrumentationRegistry.getInstrumentation().targetContext)
+        val before = store.connectionGroups(); val selected = store.uri()
+        val link = "vless://00000000-0000-4000-8000-000000000000@old.example:443?security=tls"
+        try {
+            store.save(link)
+            store.saveConnectionGroups(org.json.JSONArray(), preserveSelection=true)
+            assertEquals(link, VlessStore(InstrumentationRegistry.getInstrumentation().targetContext).uri())
+            assertEquals("saved-selection", store.connectionGroups().getJSONObject(0).getString("id"))
+        } finally {
+            store.saveConnectionGroups(before)
+            if (selected == null) store.clearSelection() else store.save(selected)
+        }
+    }
     @Test fun refreshedGroupCannotKeepRemovedServerSelected() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val store = VlessStore(context)
