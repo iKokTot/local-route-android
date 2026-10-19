@@ -6,7 +6,7 @@ import javax.net.ssl.SSLSocketFactory
 
 /** HTTPS response through the active authenticated gateway, not a TCP-port check. */
 object ServerConnectionProbe {
-    data class Result(val host: String, val success: Boolean, val detail: String)
+    data class Result(val host: String, val success: Boolean, val detail: String, val durationMs: Long? = null, val httpStatus: Int? = null)
     internal fun acceptsStatus(line: String?): Boolean = line?.let { Regex("HTTP/1\\.[01] ([0-9]{3})(?: .*|)$").matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() in 200..399 } ?: false
     fun check(): Boolean = probe().any { it.success }
     fun probe(): List<Result> {
@@ -16,9 +16,11 @@ object ServerConnectionProbe {
         val pool = java.util.concurrent.Executors.newFixedThreadPool(hosts.size) { task -> Thread(task, "vpn-probe").apply { isDaemon = true } }
         try {
             val tasks = hosts.map { host -> java.util.concurrent.Callable {
-                try { endpoint(host, password, sockets) }
+                val start=System.nanoTime()
+                val result=try { endpoint(host, password, sockets) }
                 catch (_: javax.net.ssl.SSLException) { Result(host, false, "Нет защищённого HTTPS-ответа") }
                 catch (_: Exception) { Result(host, false, "Ответ не получен") }
+                result.copy(durationMs=((System.nanoTime()-start)/1_000_000).coerceAtLeast(1))
             } }
             return pool.invokeAll(tasks, 12, java.util.concurrent.TimeUnit.SECONDS).mapIndexed { index, future ->
                 if(future.isCancelled) Result(hosts[index], false, "Время ожидания истекло") else future.get()
@@ -51,7 +53,8 @@ object ServerConnectionProbe {
                 tls.outputStream.flush()
                 val line = tls.inputStream.bufferedReader().readLine()?.take(128)
                 val success = acceptsStatus(line)
-                return Result(hostName, success, if(success) "HTTPS-ответ получен" else "Нет успешного HTTP-ответа")
+                val status=line?.split(' ')?.getOrNull(1)?.toIntOrNull()
+                return Result(hostName, success, if(success) "HTTPS-ответ получен" else if(status!=null) "Сайт ответил HTTP $status; это не обрыв VPN" else "HTTP-ответ не получен",httpStatus=status)
             }
         }
     }

@@ -118,6 +118,7 @@ class SharedRouteHost(
                 reply(requestId, JSONObject().put("ok",false).put("message","Операция остановлена."))
                 throw cancelled
             } catch (error: Exception) {
+                DiagnosticJournal.record("UI/$method","${error.javaClass.simpleName}: ${error.message.orEmpty()}")
                 reply(requestId, JSONObject().put("ok",false).put("message",ActionErrors.message(method,error)))
             } finally { if (operation === current) { operation = null; operationName = null } }
         }
@@ -164,7 +165,7 @@ class SharedRouteHost(
         }
         val dpi = LocalDpiRuntime.state.value
         val tg = TelegramProxyRuntime.state.value
-        val logs = dpi.log + tg.logs + VpnDiagnostics.lines.value
+        val logs = DiagnosticJournal.lines.value
         val diagnostic = JSONArray().put(JSONObject().put("label","DPI").put("value",dpi.message).put("level",if(dpiActive())"ok" else "neutral"))
             .put(JSONObject().put("label","VPN").put("value",VlessRuntime.state.value.message).put("level",if(vpnActive())"ok" else "neutral"))
             .put(JSONObject().put("label","Telegram").put("value",tg.message).put("level",if(tgActive())"ok" else "neutral"))
@@ -189,7 +190,7 @@ class SharedRouteHost(
             .put("telegram",JSONObject().put("port",telegram.port()).put("enabled",telegram.jointStart()))
             .put("vlessServers",serverList).put("vlessSubscriptions",groups).put("vlessSubscriptionSaved",(0 until stored.length()).any { stored.getJSONObject(it).optString("source").isNotBlank() })
             .put("autoStart",false).put("operation",if(operation?.isActive==true)JSONObject().put("kind",operationName) else JSONObject.NULL)
-            .put("diagnostics",diagnostic).put("logs",array(logs.takeLast(100))).put("appLibrary",appLibrary())
+            .put("diagnostics",diagnostic).put("logs",array(logs)).put("appLibrary",appLibrary())
             .put("bypassApps", JSONArray().also { list ->
                 val selected=org.localroute.android.data.VpnExclusions(activity).packages()
                 val known = installedApps.associateBy { it.first }
@@ -266,7 +267,7 @@ class SharedRouteHost(
                     val ok=results.any { it.success }
                     VlessRuntime.checked(ok)
                     return response(if(ok)"Получен HTTPS-ответ через сервер. Проверьте нужные приложения." else "Проверочные адреса не ответили. Это не доказывает, что все приложения недоступны: попробуйте открыть нужный сервис.").put("ok",ok)
-                        .put("results",JSONArray().also { rows -> results.forEach { rows.put(JSONObject().put("label",it.host).put("success",it.success).put("detail",it.detail).put("durationMs",0)) } })
+                        .put("results",JSONArray().also { rows -> results.forEach { rows.put(JSONObject().put("label",it.host).put("success",it.success).put("detail",it.detail).put("level",if(it.success)"ok" else if(it.httpStatus!=null)"warning" else "fail").put("durationMs",it.durationMs ?: JSONObject.NULL)) } })
                 } finally { if(started) { stopVpn(); withContext(NonCancellable) { awaitStopped(vpn=true) } } }
             }
             "autoSelectServer" -> return autoSelectServer()
@@ -289,12 +290,42 @@ class SharedRouteHost(
                 val url=payload as? String ?: ""; require(url in setOf("https://t.me/TheLocalRoute","https://max.ru/channel_LocalRoute","https://github.com/iKokTot/local-route"))
                 activity.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))
             }
-            "exportDiagnostics" -> { copy(JSONObject().put("version",BuildConfig.VERSION_NAME).put("platform","android").put("dpi",dpiActive()).put("vpn",vpnActive()).put("telegram",tgActive()).put("dpiDomainCount",dpiDomains().size).put("vpnDomainCount",servers.routes().domains.size).toString(2)); return response("Диагностика без секретов скопирована.") }
+            "exportDiagnostics" -> {
+                VpnDiagnostics.stopCapture()
+                val endpoint=servers.uri()?.let { runCatching { VlessUriParser.parse(it) }.getOrNull() }
+                val report=buildString {
+                    appendLine("Local Route — отчёт диагностики")
+                    appendLine("Создан: ${java.time.OffsetDateTime.now()}")
+                    appendLine("Версия: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); пакет: ${activity.packageName}")
+                    appendLine("Android: ${android.os.Build.VERSION.RELEASE}; API ${android.os.Build.VERSION.SDK_INT}; ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                    appendLine("DPI: ${LocalDpiRuntime.state.value.phase}; VPN: ${VlessRuntime.state.value.state.javaClass.simpleName}; TG: ${TelegramProxyRuntime.state.value.phase}")
+                    appendLine("Сеть доступна: ${CombinedRuntime.state.value.networkAvailable}; HTTPS-проверка VPN: ${VlessRuntime.state.value.verified}")
+                    appendLine("VPN: весь интернет; исключений: ${org.localroute.android.data.VpnExclusions(activity).packages().size}")
+                    appendLine("Транспорт: ${endpoint?.transport?.wireName ?: "не настроен"}; защита: ${endpoint?.security?.wireName ?: "не настроена"}")
+                    appendLine("Ключи и ссылки маскируются. Адреса ошибок могут присутствовать. Отчёт не отправляется автоматически.")
+                    appendLine("--- Последние события (до 500) ---")
+                    DiagnosticJournal.lines.value.forEach { appendLine(it) }
+                    if(DiagnosticJournal.lines.value.isEmpty())appendLine("Событий пока нет. Повторите проблему и скопируйте отчёт снова.")
+                }
+                copy(report.lineSequence().joinToString("\n") { DiagnosticRedactor.clean(it) })
+                return response("Отчёт с журналом скопирован. Вставьте его в сообщение.")
+            }
+            "clearDiagnostics" -> { VpnDiagnostics.reset(); DiagnosticJournal.clear(); return response("Журнал очищен.") }
+            "startDiagnosticCapture" -> {
+                VpnDiagnostics.startCapture()
+                return response("Запись включена на 90 секунд. Откройте ChatGPT, повторите сбой, затем вернитесь и скопируйте отчёт.")
+            }
             else -> error("Команда не поддерживается")
         }
         return response("Настройки применены.")
     }
-    private fun copy(value: String) { activity.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Local Route",value)) }
+    private fun copy(value: String) {
+        val clip=ClipData.newPlainText("Local Route",value)
+        if(android.os.Build.VERSION.SDK_INT>=33) clip.description.extras=android.os.PersistableBundle().apply {
+            putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE,true)
+        }
+        activity.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+    }
     private fun candidateStrategies(): List<DpiStrategy> {
         return AndroidStrategies.candidates(profile.lastSuccessfulStrategy(),profile.customCommand())
     }

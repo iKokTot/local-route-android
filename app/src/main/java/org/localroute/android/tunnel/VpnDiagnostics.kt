@@ -5,20 +5,29 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-/** In-memory warning/error log. Never uploads or records a complete configuration. */
+/** Capture warnings/errors with their bounded connection context; never upload logs. */
 object VpnDiagnostics {
+    private val context=org.localroute.android.core.FailureLogContext()
     private val mutable = MutableStateFlow<List<String>>(emptyList())
     val lines = mutable.asStateFlow()
-    fun redact(text: String): String = text
-        .replace(Regex("\\u001B\\[[0-?]*[ -/]*[@-~]"), "")
-        .replace(Regex("vless://[^\\s]+", RegexOption.IGNORE_CASE), "[ссылка скрыта]")
-        .replace(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"), "[ключ скрыт]")
-        .replace(Regex("socks5://[^@\\s]+@"), "socks5://[ключ скрыт]@")
-    fun add(text: String) { mutable.update { (it + redact(text).take(1200)).takeLast(100) } }
+    fun redact(text: String): String = org.localroute.android.core.DiagnosticRedactor.clean(text)
+    fun add(text: String) {
+        val safe=redact(text).take(1800)
+        mutable.update { (it + safe).takeLast(100) }
+        org.localroute.android.core.DiagnosticJournal.record("VPN",safe)
+    }
+    fun reset() { context.clear(); mutable.value=emptyList() }
+    fun startCapture() {
+        context.startCapture()
+        add("Начата подробная запись на 90 секунд: адреса, DNS, TCP/UDP и маршруты; содержимое сообщений не записывается.")
+    }
+    fun stopCapture() { context.stopCapture(); add("Подробная запись завершена.") }
+    fun capturing(): Boolean = context.capturing()
+    fun acceptLine(text: String) { context.accept(text).forEach(::add) }
     fun handler(): CommandClientHandler = object : CommandClientHandler {
-        override fun clearLogs() = Unit
+        override fun clearLogs() { context.clear() }
         override fun connected() = Unit
-        override fun disconnected(message: String?) = Unit
+        override fun disconnected(message: String?) { if(!message.isNullOrBlank()) add("Журнал движка отключён: $message") }
         override fun initializeClashMode(modes: StringIterator?, currentMode: String?) = Unit
         override fun setDefaultLogLevel(level: Int) = Unit
         override fun updateClashMode(mode: String?) = Unit
@@ -29,8 +38,7 @@ object VpnDiagnostics {
         override fun writeLogs(logs: LogIterator?) {
             while (logs?.hasNext() == true) {
                 val line = logs.next().message
-                // Debug builds also expose connection destinations: keep only failures.
-                if (Regex("\\b(error|warn|failed|timeout|unreachable|refused)\\b", RegexOption.IGNORE_CASE).containsMatchIn(redact(line))) add(line)
+                acceptLine(line)
             }
         }
     }

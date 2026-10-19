@@ -189,7 +189,7 @@ class NetworkIntegrationTest {
             store.save(previous)
         }
     }
-    @Test fun combinedSelectedPackageTcpAndUdpUseLocalSocks() {
+    @Test fun combinedLocalNetworkTcpAndUdpRemainDirect() {
         foreground()
         val store = VlessStore(context)
         val previous = store.uri().orEmpty()
@@ -226,7 +226,9 @@ class NetworkIntegrationTest {
             android.util.Log.i("CombinedRoutes", messages.joinToString("\n"))
             assertEquals(messages.joinToString("\n") + "\n" + org.localroute.android.localdpi.LocalDpiRuntime.state.value + "\n" + VlessRuntime.state.value, "local-route-dpi-fixture", localResult)
             assertEquals(messages.joinToString("\n"), "local-route-udp", selectedProbe("localudp"))
-            await { messages.any { it.contains("outbound/socks[local-dpi]") && it.contains("18445") } && messages.any { it.contains("outbound/socks[local-dpi]") && it.contains("18446") } }
+            // Private-address routing precedes application DPI rules intentionally.
+            // This fixture is 10.0.2.2: it verifies LAN access, not DPI bypass.
+            await { messages.any { it.contains("outbound/direct[direct]") && it.contains("18445") } && messages.any { it.contains("outbound/direct[direct]") && it.contains("packet") } }
         } finally {
             client?.disconnect()
             context.startService(Intent(context, CombinedVpnService::class.java).setAction(CombinedVpnService.STOP_ALL))

@@ -30,9 +30,14 @@ object CommunityConfigCompiler {
         val dnsServers = mutableListOf("""{"type":"udp","tag":"bootstrap-dns","server":"$bootstrapDns"}""")
         if (plan.serverEnabled) dnsServers += """{"type":"https","tag":"server-dns","server":"1.1.1.1","server_port":443,"path":"/dns-query","detour":"vless-out"}"""
         val dnsRules = mutableListOf<String>()
+        // Some VLESS exits accept TCP to IPv6 but close TLS immediately; Chrome then
+        // retries that same address instead of IPv4. Scope compatibility to affected
+        // services, keeping IPv6 for the server endpoint, LAN and other destinations.
+        // HTTPS/SVCB hints can advertise IPv6 even when AAAA is empty.
+        if (plan.serverEnabled) dnsRules += """{"domain_suffix":["chatgpt.com","openai.com","oaistatic.com","oaiusercontent.com"],"query_type":["AAAA","HTTPS"],"action":"predefined","rcode":"NOERROR"}"""
         if (plan.dpiEnabled && plan.domains.isNotEmpty()) dnsRules += """{"domain_suffix":${array(plan.domains)},"server":"bootstrap-dns"}"""
         if (plan.serverEnabled && !plan.serverRoutes.allTraffic && plan.serverRoutes.domains.isNotEmpty()) dnsRules += """{"domain_suffix":${array(plan.serverRoutes.domains)},"server":"server-dns"}"""
         val dnsFinal = if (plan.serverEnabled && plan.serverRoutes.allTraffic) "server-dns" else "bootstrap-dns"
-        return """{"log":{"level":"warn"},"dns":{"reverse_mapping":true,"servers":[${dnsServers.joinToString(",")}],"rules":[${dnsRules.joinToString(",")}],"final":"$dnsFinal"},"inbounds":[{"type":"tun","tag":"local-route-combined","address":["198.18.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"strict_route":true,"stack":"gvisor","mtu":1400}$gateway],"outbounds":[${outbounds.joinToString(",")}],"route":{"auto_detect_interface":true,"default_domain_resolver":"bootstrap-dns","rules":[${rules.joinToString(",")}],"final":"$final"}}"""
+        return """{"log":{"level":"info"},"dns":{"reverse_mapping":true,"servers":[${dnsServers.joinToString(",")}],"rules":[${dnsRules.joinToString(",")}],"final":"$dnsFinal"},"inbounds":[{"type":"tun","tag":"local-route-combined","address":["198.18.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"strict_route":true,"stack":"gvisor","mtu":1400}$gateway],"outbounds":[${outbounds.joinToString(",")}],"route":{"auto_detect_interface":true,"default_domain_resolver":"bootstrap-dns","rules":[${rules.joinToString(",")}],"final":"$final"}}"""
     }
 }

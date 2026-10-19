@@ -323,3 +323,9 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
   .component-detail { font-size:11px; margin:3px 0 5px; }
   .card-actions .button, .card-actions .text-button { min-height:36px; padding-block:6px; }
 }
+.platform-android .diagnostics-settings { padding: 16px; }
+.platform-android .diagnostics-settings > * + * { margin-top: 16px; }
+.platform-android .diagnostics-settings > .panel { padding: 0; margin-block: 16px; }
+.platform-android .diagnostics-settings #technical-log { padding: 12px; }
+.platform-android .diagnostics-settings > button { max-width: 100%; }
+.platform-android .diagnostics-settings #activity-log.hidden { display: none; }

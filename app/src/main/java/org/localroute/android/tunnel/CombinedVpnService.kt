@@ -157,7 +157,7 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
         val password = if (next.serverEnabled) VlessGateway.password ?: VlessGateway.prepare() else null
         if (org.localroute.android.BuildConfig.DEBUG && intent?.hasExtra("test_package") == true) testPackage = intent.getStringExtra("test_package")
         val config = CombinedConfigCompiler.compile(next, endpoint, dns, password, testPackage?.let { setOf(it) }.orEmpty())
-            .let { if (org.localroute.android.BuildConfig.DEBUG) it.replace("\"level\":\"warn\"", "\"level\":\"debug\"") else it }
+            .let { if (org.localroute.android.BuildConfig.DEBUG) it.replace("\"level\":\"info\"", "\"level\":\"debug\"") else it }
         Libbox.checkConfig(config)
         VpnDiagnostics.add("Маршрут: DPI=${next.dpiEnabled}, VLESS=${next.serverEnabled}; Android ${Build.VERSION.SDK_INT}; DNS=$dns; исключений=${org.localroute.android.data.VpnExclusions(this).packages().size}")
         if (next.dpiEnabled && (proxyJob == null || strategy != requestedStrategy)) {

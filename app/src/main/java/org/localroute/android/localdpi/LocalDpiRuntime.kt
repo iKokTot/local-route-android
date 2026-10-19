@@ -20,11 +20,13 @@ object LocalDpiRuntime {
     val state = mutable.asStateFlow()
 
     fun update(phase: EnginePhase, message: String, strategyId: String? = mutable.value.strategyId) {
+        org.localroute.android.core.DiagnosticJournal.record("DPI/$phase",message)
         val line = "${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())} · $message"
         mutable.value = EngineState(phase, message, strategyId, (mutable.value.log + line).takeLast(60))
     }
 
     fun log(message: String) {
+        org.localroute.android.core.DiagnosticJournal.record("DPI",message)
         val current = mutable.value
         val line = "${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())} · $message"
         mutable.value = current.copy(log = (current.log + line).takeLast(60))

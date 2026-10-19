@@ -191,7 +191,7 @@ function renderControls() {
   disable('#start-all', busy || !canStart || dirty('dpi') || dirty('vless') || dirty('telegram'), 'Сначала настройте компоненты и сохраните изменения');
   const canStop = state.active || state.vlessActive || state.telegramActive || Boolean(pending) || Boolean(state.operation);
   disable('#stop-all', !canStop || pending?.kind === 'stop', 'Все компоненты уже остановлены');
-  disable('#autostart-toggle, #run-check, #refresh-log, #export-diagnostics', busy, 'Дождитесь завершения операции');
+  disable('#autostart-toggle, #run-check, #refresh-log, #export-diagnostics, #clear-diagnostics', busy, 'Дождитесь завершения операции');
   disable('#delete-vless', busy || state.vlessActive || (!state.vlessConfigured && !state.vlessServers?.length), 'Сначала остановите VLESS');
   disable('#pick-vless-app', vlessLocked, 'Сначала остановите VLESS');
   all('[data-reset-kind]').forEach(button => { const kind=button.dataset.resetKind; button.disabled=busy || !dirty(kind) || (kind==='dpi' ? state.active : kind==='vless' ? state.vlessActive : state.telegramActive); });
@@ -334,7 +334,7 @@ function configurePlatform() {
   $('#manual-vless-app').placeholder='com.example.app';
   document.querySelector('label[for="manual-vless-app"]').textContent='Другое приложение · имя пакета';
   $('#pick-vless-app').classList.add('hidden');
-  $('#export-diagnostics').textContent='Скопировать диагностику';
+  $('#export-diagnostics').textContent='Скопировать отчёт';
   document.querySelector('.component-subtitle').textContent='Обход DPI · ByeDPI';
   document.querySelector('.telegram-layout .page-intro')?.remove();
   document.querySelector('[data-page-panel="telegram"] > .page-intro').textContent='Запустите локальный прокси и подтвердите подключение в Telegram.';
@@ -370,10 +370,16 @@ function configureAndroidSettings() {
   groups.lab.append($('#strategy-tests').closest('details'));
   const diagnostics = document.createElement('details');
   diagnostics.className = 'advanced diagnostics-settings';
-  const summary = document.createElement('summary'); summary.textContent = 'Диагностика и журнал'; diagnostics.append(summary);
-  diagnostics.append($('#diagnostics').closest('section'), $('#technical-log'));
+  const summary = document.createElement('summary'); summary.textContent = 'Диагностика и ошибки'; diagnostics.append(summary);
+  const technicalLog=$('#technical-log');
+  diagnostics.append($('#diagnostics').closest('section'), technicalLog);
+  const logHelp=document.createElement('p');logHelp.className='setting-description';logHelp.textContent='Последние 500 событий сохраняются только на телефоне, в том числе после перезапуска. Повторите проблему, затем нажмите «Скопировать отчёт» и вставьте его в сообщение. Ключи и ссылки маскируются; адреса соединений могут присутствовать.';diagnostics.insertBefore(logHelp,technicalLog);
+  technicalLog.querySelector('summary').textContent='Посмотреть журнал ошибок';
+  const clearLog=document.createElement('button');clearLog.id='clear-diagnostics';clearLog.className='button outlined';clearLog.textContent='Очистить журнал';diagnostics.append(clearLog);
+  const captureLog=document.createElement('button');captureLog.id='capture-diagnostics';captureLog.className='button primary';captureLog.textContent='Записать проблему · 90 секунд';diagnostics.insertBefore(captureLog,technicalLog);
+  const captureHelp=document.createElement('p');captureHelp.className='setting-description';captureHelp.textContent='Нажмите запись, откройте приложение с проблемой, затем вернитесь и скопируйте отчёт. В подробный журнал попадут адреса посещённых сервисов и маршруты, но не содержимое сообщений. Запись остановится через 90 секунд или при копировании отчёта.';diagnostics.insertBefore(captureHelp,captureLog);
   const events = $('#activity-log');
-  events.previousElementSibling?.remove(); diagnostics.append(events);
+  events.previousElementSibling?.remove(); events.classList.add('hidden'); diagnostics.append(events);
   settings.insertBefore(diagnostics, links);
   $('#telegram-enabled').closest('.telegram-autostart').classList.add('hidden');
   $('#telegram-settings-hint').textContent = 'Порт можно изменить, когда прокси выключен. Затем подключите Telegram заново.';
@@ -442,10 +448,11 @@ function renderVlessReport(report) {
   const rows = report.results.map((item) => {
     const level = item.level || (item.success ? 'ok' : 'fail');
     const label = level === 'warning' ? 'Доступ ограничен' : (item.success ? 'Ответ получен' : 'Ошибка');
-    return `<div class="test-result ${['ok', 'warning', 'fail'].includes(level) ? level : 'fail'}"><strong>${escapeHtml(item.label)} · ${label}</strong><span>${escapeHtml(item.detail)} · ${escapeHtml(item.durationMs)} мс</span></div>`;
+    return `<div class="test-result ${['ok', 'warning', 'fail'].includes(level) ? level : 'fail'}"><strong>${escapeHtml(item.label)} · ${label}</strong><span>${escapeHtml(item.detail)}${Number(item.durationMs)>0 ? ' · '+escapeHtml(item.durationMs)+' мс' : ''}</span></div>`;
   }).join('');
   const apps = report.appRules || [];
-  $('#vless-test-results').innerHTML = `<div class="vless-check-list">${rows}</div><p class="setting-description">Это проверка соединения через сервер, а не полной работы приложений.</p>${!isAndroid() && apps.length ? `<details class="advanced"><summary>Правила приложений · ${apps.length}</summary><p class="setting-description">В профиль включены ${apps.map((app) => escapeHtml(app.process)).join(', ')}.</p></details>` : ''}`;
+  const summary=report.results.some(item=>item.success) ? 'Соединение через сервер работает' : 'Не удалось подтвердить соединение';
+  $('#vless-test-results').innerHTML = `${isAndroid() ? `<p class="setting-description">${summary}</p><details class="advanced"><summary>Подробности проверки</summary><div class="vless-check-list">${rows}</div></details>` : `<div class="vless-check-list">${rows}</div>`}<p class="setting-description">Это проверка соединения через сервер, а не полной работы приложений.</p>${!isAndroid() && apps.length ? `<details class="advanced"><summary>Правила приложений · ${apps.length}</summary><p class="setting-description">В профиль включены ${apps.map((app) => escapeHtml(app.process)).join(', ')}.</p></details>` : ''}`;
 }
 function renderDpiReport(report) {
   const summary = report.message ? `<p class="setting-description">${escapeHtml(report.message)}</p>` : '';
@@ -540,6 +547,8 @@ async function handleAction(button) {
     $('#app-search').value=''; renderApps(); renderControls();
   });
   if (id === 'export-diagnostics') return perform('export', 'Сохраняю диагностику без секретов…', () => window.localRoute.exportDiagnostics());
+  if(id==='capture-diagnostics') return perform('save','Включаю запись на 90 секунд…',()=>window.localRoute.startDiagnosticCapture());
+  if(id==='clear-diagnostics') { if(!await confirmAction('Очистить сохранённый журнал ошибок? Подключения и настройки не изменятся.','Очистить'))return;return perform('save','Очищаю журнал…',()=>window.localRoute.clearDiagnostics()); }
   if (id === 'delete-vless') {
     if (isAndroid() && !await confirmAction('Удалить все подключения и подписки с этого устройства?', 'Удалить')) return;
     return perform('vless', 'Удаляю подключение…', () => window.localRoute.deleteVless(), () => { resetDraft('vless'); renderEditor('vless'); $('#vless-test-results').textContent='Подключения удалены.'; });

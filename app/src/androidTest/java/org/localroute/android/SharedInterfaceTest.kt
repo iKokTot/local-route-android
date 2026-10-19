@@ -15,6 +15,128 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
+    @Test fun connectionReportIsCompactAndDiagnosticsHaveInsets() {
+        attach()
+        js("navigate('routes');renderVlessReport({results:[{label:'example.com',success:true,detail:'HTTPS-ответ получен',durationMs:123},{label:'www.wikipedia.org',success:false,level:'warning',detail:'Сайт ответил HTTP 403; это не обрыв VPN',durationMs:456}]})")
+        assertEquals(true,js("document.querySelector('#vless-test-results').textContent.includes('Соединение через сервер работает')"))
+        assertEquals(false,js("document.querySelector('#vless-test-results details').open"))
+        assertEquals(true,js("document.querySelector('#vless-test-results').textContent.includes('123 мс')"))
+        assertEquals(false,js("document.querySelector('#vless-test-results').textContent.includes('0 мс')"))
+        js("navigate('settings');document.querySelector('.diagnostics-settings').open=true")
+        assertEquals(true,js("parseFloat(getComputedStyle(document.querySelector('.diagnostics-settings')).paddingLeft)>=16"))
+        assertEquals(true,js("parseFloat(getComputedStyle(document.querySelector('#technical-log')).marginTop)>=16"))
+        js("navigate('control')")
+    }
+    /** Explicit manual diagnostic only: uses the profile entered by the owner, never prints it. */
+    @Test fun manualChatGptChromeCapture() {
+        org.junit.Assume.assumeTrue("Explicit owner-profile diagnostic only",InstrumentationRegistry.getArguments().getString("manualProfile")=="1")
+        attach()
+        js("navigate('routes');if(!state.vlessActive)document.querySelector('#start-vless').click()")
+        await("!pending && state.vlessActive")
+        for(ip in listOf("172.64.155.209","104.18.32.47","2606:4700:4408::ac40:9bd1")) {
+            val result=runCatching {
+                java.net.Socket().use { tcp ->
+                    tcp.connect(java.net.InetSocketAddress("127.0.0.1",1081),3000);tcp.soTimeout=10000
+                    val input=java.io.DataInputStream(tcp.getInputStream());val output=tcp.getOutputStream()
+                    output.write(byteArrayOf(5,1,2));output.flush()
+                    require(input.readUnsignedByte()==5 && input.readUnsignedByte()==2)
+                    val user="localroute".toByteArray();val pass=requireNotNull(org.localroute.android.tunnel.VlessGateway.password).toByteArray()
+                    output.write(byteArrayOf(1,user.size.toByte())+user+byteArrayOf(pass.size.toByte())+pass);output.flush()
+                    require(input.readUnsignedByte()==1 && input.readUnsignedByte()==0)
+                    val addr=java.net.InetAddress.getByName(ip).address
+                    output.write(byteArrayOf(5,1,0,if(addr.size==4)1 else 4)+addr+byteArrayOf(1,-69));output.flush()
+                    require(input.readUnsignedByte()==5 && input.readUnsignedByte()==0)
+                    input.readUnsignedByte();val count=when(input.readUnsignedByte()){1->4;4->16;3->input.readUnsignedByte();else->error("SOCKS")};input.readFully(ByteArray(count+2))
+                    (javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory).createSocket(tcp,"chatgpt.com",443,true).use { socket ->
+                        (socket as javax.net.ssl.SSLSocket).startHandshake()
+                        socket.getOutputStream().write("GET / HTTP/1.1\r\nHost: chatgpt.com\r\nConnection: close\r\n\r\n".toByteArray())
+                        socket.getInputStream().bufferedReader().readLine()
+                    }
+                }
+            }.fold({it ?: "EOF"},{"${it.javaClass.simpleName}: ${it.message}"})
+            android.util.Log.i("RouteAddressProbe","$ip => $result")
+        }
+        org.localroute.android.core.DiagnosticJournal.clear()
+        org.localroute.android.tunnel.VpnDiagnostics.startCapture()
+        instrumentation.targetContext.startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://chatgpt.com")).setPackage("com.android.chrome").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        SystemClock.sleep(20000)
+        val shot=instrumentation.uiAutomation.takeScreenshot()
+        if(shot!=null) {
+            java.io.File(instrumentation.targetContext.getExternalFilesDir(null),"chatgpt-vpn.png").outputStream().use { shot.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
+            shot.recycle()
+        }
+        android.util.Log.i("RouteAddressProbe","Page screenshot captured with VPN state=${org.localroute.android.tunnel.VlessRuntime.state.value.state.javaClass.simpleName}")
+        org.localroute.android.tunnel.VpnDiagnostics.stopCapture()
+        org.localroute.android.core.DiagnosticJournal.lines.value.forEach { android.util.Log.i("RouteManualCapture",it) }
+    }
+    @Test fun saturatedDiagnosticReportReachesClipboardWithoutTruncation() {
+        attach()
+        val journal=org.localroute.android.core.DiagnosticJournal
+        journal.clear()
+        org.localroute.android.tunnel.VpnDiagnostics.startCapture()
+        // More than both ring limits: mimic a busy phone rather than a three-line fixture.
+        repeat(1500) { index ->
+            org.localroute.android.tunnel.VpnDiagnostics.acceptLine("DEBUG [${10000+index} 1ms] diagnostic-load-$index outbound/vless to capture.example:443 " + "x".repeat(250))
+        }
+        org.localroute.android.tunnel.VpnDiagnostics.acceptLine("INFO [99999 2ms] REPORT_END_SENTINEL token=MUST_BE_MASKED")
+        js("navigate('settings');document.querySelector('.diagnostics-settings').open=true;document.querySelector('#export-diagnostics').click()")
+        await("!pending")
+        var report=""
+        instrumentation.runOnMainSync {
+            report=instrumentation.targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text.toString()
+        }
+        val expected=journal.lines.value.joinToString("\n") { org.localroute.android.core.DiagnosticRedactor.clean(it) }
+        assertTrue("Clipboard lost journal tail: chars=${report.length}, expected=${expected.length}, tail=${report.takeLast(250)}",report.endsWith(expected+"\n"))
+        assertTrue(report.contains("REPORT_END_SENTINEL"))
+        assertFalse(report.contains("MUST_BE_MASKED"))
+        assertFalse(report.contains("diagnostic-load-0 "))
+        assertTrue("Test must exercise long report",report.length>100_000)
+        assertFalse(org.localroute.android.tunnel.VpnDiagnostics.capturing())
+        println("DIAGNOSTIC_CLIPBOARD_VERIFIED chars=${report.length} lines=${journal.lines.value.size} tail=present")
+    }
+    @Test fun shortCaptureRecordsNonErrorConnectionsAndStopsOnCopy() {
+        attach()
+        js("navigate('settings');document.querySelector('.diagnostics-settings').open=true;document.querySelector('#capture-diagnostics').click()")
+        await("!pending")
+        assertTrue(org.localroute.android.tunnel.VpnDiagnostics.capturing())
+        org.localroute.android.tunnel.VpnDiagnostics.acceptLine("INFO [314 0ms] outbound/vless[vless-out]: connection to capture.example:443")
+        org.localroute.android.tunnel.VpnDiagnostics.acceptLine("DEBUG [314 30s] flow closed: idle timeout token=CAPTURE_SECRET")
+        js("document.querySelector('#export-diagnostics').click()")
+        await("!pending")
+        assertFalse(org.localroute.android.tunnel.VpnDiagnostics.capturing())
+        var report=""
+        instrumentation.runOnMainSync {
+            report=instrumentation.targetContext.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text.toString()
+        }
+        assertTrue(report.contains("capture.example:443"));assertTrue(report.contains("idle timeout"))
+        assertFalse(report.contains("CAPTURE_SECRET"))
+    }
+    @Test fun errorReportCopiesContextAndMasksSecrets() {
+        attach()
+        val uuid="00000000-0000-4000-8000-000000000000"
+        org.localroute.android.tunnel.VpnDiagnostics.acceptLine("INFO[0001] [123 0ms] inbound/tun: inbound connection to diagnostic.example:443")
+        org.localroute.android.tunnel.VpnDiagnostics.acceptLine("INFO[0001] [123 0ms] outbound/vless[vless-out]: outbound connection to diagnostic.example:443")
+        org.localroute.android.tunnel.VpnDiagnostics.acceptLine("ERROR[0001] [123 3ms] connection refused vless://$uuid@private.example:443 token=DO_NOT_EXPORT")
+        js("navigate('settings');document.querySelector('.diagnostics-settings').open=true;document.querySelector('#export-diagnostics').click()")
+        await("!pending")
+        var report=""
+        instrumentation.runOnMainSync {
+            val clipboard=instrumentation.targetContext.getSystemService(android.content.ClipboardManager::class.java)
+            report=clipboard.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+        }
+        assertTrue(report.contains("Local Route — отчёт диагностики"))
+        assertTrue(report.contains(BuildConfig.VERSION_NAME))
+        assertTrue(report.contains("diagnostic.example:443"));assertTrue(report.contains("vless-out"))
+        assertFalse(report.contains(uuid));assertFalse(report.contains("DO_NOT_EXPORT"));assertFalse(report.contains("vless://"))
+        js("document.querySelector('#clear-diagnostics').click()")
+        await("Boolean(document.querySelector('#confirmation-dialog')?.open)")
+        js("document.querySelector('#confirmation-dialog .outlined').click();navigate('control')")
+        val file=java.io.File(instrumentation.targetContext.filesDir,"diagnostics/errors.txt")
+        val deadline=SystemClock.uptimeMillis()+5000
+        while(SystemClock.uptimeMillis()<deadline && (!file.exists() || !file.readText().contains("diagnostic.example")))SystemClock.sleep(100)
+        val disk=file.readText()
+        assertTrue(disk.contains("diagnostic.example"));assertFalse(disk.contains(uuid));assertFalse(disk.contains("DO_NOT_EXPORT"))
+    }
     @Test fun runningAndVerifiedAreDifferentStates() {
         attach()
         js("window.savedAuditState=state;state={...state,vlessActive:true,vlessConfigured:true,vpnCheck:{verified:null},networkAvailable:true};renderState()")
@@ -225,7 +347,7 @@ class SharedInterfaceTest {
     private fun await(script: String) {
         val deadline=SystemClock.uptimeMillis()+15000
         while(SystemClock.uptimeMillis()<deadline) { if(js(script)==true)return;SystemClock.sleep(100) }
-        error("Условие интерфейса не выполнено: $script")
+        error("Условие интерфейса не выполнено: $script; UI: ${js("document.querySelector('#app-error')?.textContent")}")
     }
     @Test fun sharedPageFitsAndSettingsBackKeepsOriginWithoutTouchingConnections() {
         attach()

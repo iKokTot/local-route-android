@@ -24,8 +24,14 @@ object TelegramProxyRuntime {
     }
     fun stopped() { mutable.update { if (it.phase == TelegramProxyPhase.ERROR) it else it.copy(phase = TelegramProxyPhase.STOPPED, message = "Прокси выключен", checking = false, verified = null) } }
     fun checking() { mutable.update { it.copy(checking = true, message = "Проверяем ответ Telegram через локальный прокси…") } }
-    fun checked(message: String, verified: Boolean? = null) { mutable.update { it.copy(checking = false, message = message, verified = verified) } }
-    fun log(message: String) { mutable.update { it.copy(logs = (it.logs + safe(message)).takeLast(60)) } }
+    fun checked(message: String, verified: Boolean? = null) {
+        org.localroute.android.core.DiagnosticJournal.record("CHECK/TG",message)
+        mutable.update { it.copy(checking = false, message = message, verified = verified) }
+    }
+    fun log(message: String) {
+        org.localroute.android.core.DiagnosticJournal.record("TG",message)
+        mutable.update { it.copy(logs = (it.logs + safe(message)).takeLast(60)) }
+    }
     private fun safe(value: String) = value.replace(Regex("(?:tg|socks5)://[^\\s]+"), "[ссылка скрыта]")
         .replace(Regex("(?i)[0-9a-f]{32,}"), "[ключ скрыт]").take(500)
 }
