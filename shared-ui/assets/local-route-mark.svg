@@ -1,7 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
-  <rect width="48" height="48" rx="15" fill="#98F5C0"/>
-  <path d="M12 34h10V25h8l6-11" stroke="#10271D" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m30 14 6-1 1 6" stroke="#10271D" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="12" cy="34" r="4" fill="#10271D"/>
-  <circle cx="22" cy="25" r="2.5" fill="#98F5C0" stroke="#10271D" stroke-width="3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>Local Route — DPI, proxy and VLESS in one routing hub</title>
+  <rect width="512" height="512" rx="122" fill="#101824"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M48 132H82M116 132H136M170 132H193C230 132 226 200 267 208L301 218" stroke="#7DE8BD" stroke-width="30"/>
+    <path d="M48 254H204C230 254 249 266 278 266" stroke="#F8C264" stroke-width="25"/>
+    <circle cx="91" cy="254" r="27" fill="#F8C264"/>
+    <circle cx="177" cy="254" r="27" fill="#F8C264"/>
+    <path d="M48 354H180C224 354 236 311 282 303M48 390H180C231 390 249 345 309 323" stroke="#9C9EFF" stroke-width="23"/>
+    <path d="M373 266H450" stroke="#FFFFFF" stroke-width="29"/>
+    <path d="M334 208L369 229Q379 235 379 246V286Q379 297 369 303L334 324Q324 330 314 324L279 303Q269 297 269 286V246Q269 235 279 229L314 208Q324 202 334 208Z" fill="#101824" stroke="#FFFFFF" stroke-width="18"/>
+  </g>
 </svg>
