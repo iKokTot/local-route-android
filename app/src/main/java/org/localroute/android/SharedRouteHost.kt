@@ -29,12 +29,17 @@ class SharedRouteHost(
     private val stopVpn: () -> Unit,
     private val startTelegram: () -> Unit,
     private val stopTelegram: () -> Unit,
-    private val addTile: (ShortcutMode) -> Unit
+    private val addTile: (ShortcutMode) -> Unit,
+    private val startOpenFlux: () -> Unit
 ) {
     companion object { const val ORIGIN = "https://localroute.invalid/" }
     private val profile = ProfileStore(activity)
     private val servers = VlessStore(activity)
     private val telegram = TelegramProxySettings(activity)
+    private val openFlux by lazy { org.localroute.android.openflux.OpenFluxStore(activity) }
+    private fun stopOpenFlux() {
+        if(org.localroute.android.openflux.OpenFluxRuntime.active()) activity.startService(Intent(activity,org.localroute.android.openflux.OpenFluxVpnService::class.java).setAction(org.localroute.android.openflux.OpenFluxVpnService.STOP))
+    }
     private val installedApps by lazy {
         val manager = activity.packageManager
         manager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
@@ -104,7 +109,7 @@ class SharedRouteHost(
         activity.lifecycleScope.launch {
             if (webView.url?.startsWith(ORIGIN) != true) return@launch
             val readonly = method == "readState"
-            val stopping = method in setOf("stopAll", "stopEngine", "stopTelegram", "stopVless")
+            val stopping = method in setOf("stopAll", "stopEngine", "stopTelegram", "stopVless", "stopOpenFlux")
             if (!readonly && !stopping && operation?.isActive == true) { reply(requestId, JSONObject().put("ok",false).put("message","Дождитесь завершения операции или остановите её.")); return@launch }
             if (stopping) { operation?.cancelAndJoin(); operation = null; operationName = null }
             val current = coroutineContext[Job]
@@ -177,10 +182,11 @@ class SharedRouteHost(
             .put("vless",JSONObject().put("mode",if(routes.allTraffic)"all" else "selective").put("services",array(services)).put("customDomains",array(custom)).put("domains",array(routes.domains)).put("apps",array(routes.packages)))
             .put("verifiedStrategy",profile.lastSuccessfulStrategy() ?: JSONObject.NULL)
             .put("dpiTrial",JSONObject().put("candidate",trial.candidate ?: JSONObject.NULL).put("attempt",trial.tried.size).put("total",candidates.size)
-                .put("hasNext",candidates.any { it.id !in trial.tried }).put("pendingConfirmation",dpi.phase==EnginePhase.ACTIVE && trial.candidate!=null && trial.candidate==dpi.strategyId)
+                .put("hasNext",false).put("pendingConfirmation",false)
                 .put("name",candidates.firstOrNull { it.id==trial.candidate }?.title ?: ""))
             .put("dpiCommand",profile.customCommand().ifBlank { AndroidStrategies.BYEDPI_ANDROID_TCP_UDP_COMMAND })
             .put("active",dpiActive()).put("vlessActive",vpnActive()).put("vlessConfigured",!current.isNullOrBlank())
+            .put("openFlux",JSONObject().put("configured",openFlux.link()!=null).put("phase",org.localroute.android.openflux.OpenFluxRuntime.phase).put("message",org.localroute.android.openflux.OpenFluxRuntime.message))
             .put("networkAvailable",CombinedRuntime.state.value.networkAvailable ?: JSONObject.NULL)
             .put("vpnCheck",JSONObject().put("verified",VlessRuntime.state.value.verified ?: JSONObject.NULL)
                 .put("checkedAt",VlessRuntime.state.value.checkedAt ?: JSONObject.NULL))
@@ -213,8 +219,11 @@ class SharedRouteHost(
                 check(!dpiActive())
                 val services = strings(raw.optJSONArray("services")).mapNotNull { if(it=="youtube")ServiceTarget.YOUTUBE else if(it=="discord")ServiceTarget.DISCORD else null }.toSet()
                 val custom = strings(raw.optJSONArray("customDomains")).toSet(); require(custom.all(RouteDomains::valid))
+                val command=if(raw.has("command"))raw.getString("command") else null
+                require(command==null || command.isBlank() || AndroidStrategies.custom(command)!=null) { "Проверьте строку ByeDPI" }
                 val changed = services != profile.selectedServices() || custom != profile.customDomains()
                 profile.saveSelectedServices(services); check(profile.saveCustomDomains(custom))
+                if(command!=null && command!=profile.customCommand()) {profile.saveCustomCommand(command);profile.clearLastSuccessfulStrategy()}
                 if(changed) { profile.clearLastSuccessfulStrategy(); profile.saveDpiTrial(DpiTrialPlan()) }
             }
             "saveDpiCommand" -> { check(!dpiActive()); val command=payload as? String ?: ""; require(AndroidStrategies.custom(command)!=null); profile.saveCustomCommand(command); profile.clearLastSuccessfulStrategy(); profile.saveDpiTrial(DpiTrialPlan()) }
@@ -223,16 +232,19 @@ class SharedRouteHost(
                 require((RecommendedBypassApps.packages + installedApps.map { it.first } + exclusions.packages()).containsAll(selected))
                 exclusions.save(selected) }
             "confirmDpi" -> {
-                val trial=profile.dpiTrial(); val candidate=requireNotNull(trial.candidate)
-                check(LocalDpiRuntime.state.value.phase==EnginePhase.ACTIVE && LocalDpiRuntime.state.value.strategyId==candidate)
-                profile.saveLastSuccessfulStrategy(candidate); profile.saveDpiTrial(trial.confirmed())
-                return response("Этот профиль сохранён после вашей проверки.")
+                return response("Дополнительное подтверждение для DPI не требуется.")
             }
-            "startVerified" -> { require(profile.lastSuccessfulStrategy()!=null); startLocal() }
-            "autoSelect" -> return runTrial(restart=true)
-            "testStrategy" -> return runTrial(restart=true, requested=payload as? String)
-            "rejectDpi" -> return runTrial(restart=false)
-            "toggleEngine" -> { if(dpiActive())stopDpi() else return runTrial(restart=true) }
+            "startVerified", "autoSelect" -> {startLocal();return response("DPI включён.")}
+            "testStrategy" -> startLocal(requireNotNull(AndroidStrategies.resolve(payload as? String,profile.customCommand())))
+            "rejectDpi" -> { stopDpi();awaitStopped(dpi=true);return response("DPI остановлен. Параметры доступны в настройках.") }
+            "toggleEngine" -> { if(dpiActive()) {stopDpi();awaitStopped(dpi=true)} else startLocal() }
+            "resetDpiCommand" -> {
+                check(!dpiActive()) { "Сначала остановите DPI" }
+                profile.saveCustomCommand("");profile.clearLastSuccessfulStrategy();profile.saveDpiTrial(DpiTrialPlan())
+                return response("Восстановлена стандартная строка DPI. Подключения VPN и исключения сохранены.")
+            }
+            "restartDpi" -> {stopDpi();awaitStopped(dpi=true);startLocal();return response("DPI перезапущен.")}
+            "restartVless" -> {stopVpn();awaitStopped(vpn=true);startServer();return response("VPN перезапущен.")}
             "stopEngine" -> { stopDpi(); awaitStopped(dpi=true) }
             "saveVless" -> {
                 check(!vpnActive()); val uri=raw.optString("uri").ifBlank { servers.uri().orEmpty() }
@@ -256,7 +268,7 @@ class SharedRouteHost(
                 if(links(removed).contains(servers.uri()) && profiles().none { it.link==servers.uri() }) servers.clearSelection()
             }
             "deleteVless" -> { check(!vpnActive()); servers.clear() }
-            "startVless" -> startServer()
+            "startVless" -> {startServer();return response("VPN включён.")}
             "stopVless" -> { stopVpn(); awaitStopped(vpn=true) }
             "toggleVless" -> { if(vpnActive()) { stopVpn(); awaitStopped(vpn=true) } else startServer() }
             "testVless" -> {
@@ -272,19 +284,28 @@ class SharedRouteHost(
             }
             "autoSelectServer" -> return autoSelectServer()
             "saveTelegram" -> { check(!tgActive()); telegram.savePort(raw.optInt("port",1443)); telegram.setJointStart(raw.optBoolean("enabled")) }
-            "startTelegram" -> startTelegram()
+            "startTelegram" -> {startTelegram();return response("Прокси запускается. Затем подключите его в Telegram.")}
             "stopTelegram" -> stopTelegram()
-            "copyTelegram" -> copy(telegram.link())
-            "connectTelegram" -> activity.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(telegram.link())))
+            "copyTelegram" -> {copy(telegram.link());return response("Ссылка на прокси скопирована.")}
+            "connectTelegram" -> {activity.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(telegram.link())));return response("Подтвердите подключение прокси в Telegram.")}
             "startAll" -> {
                 val failures=mutableListOf<String>()
                 suspend fun component(name: String, action: suspend () -> Unit) { try { action() } catch(cancelled: CancellationException) { throw cancelled } catch(_: Exception) { failures += name } }
-                if(!dpiActive() && profile.lastSuccessfulStrategy()!=null) component("DPI") { startLocal() }
+                if(!dpiActive()) component("DPI") { startLocal() }
                 if(!vpnActive() && !servers.uri().isNullOrBlank()) component("VPN") { startServer() }
                 if(!tgActive() && telegram.jointStart()) component("Telegram") { startTelegram() }
                 return response(if(failures.isEmpty())"Настроенные компоненты запущены." else "Не удалось запустить: ${failures.joinToString()}. Другие компоненты обработаны.").put("ok",failures.isEmpty())
             }
-            "stopAll" -> { stopDpi(); stopVpn(); stopTelegram(); awaitStopped(dpi=true,vpn=true) }
+            "saveOpenFlux" -> { check(!org.localroute.android.openflux.OpenFluxRuntime.active()); openFlux.save(payload as? String ?: ""); return response("Подключение OpenFlux сохранено на телефоне") }
+            "startOpenFlux" -> {
+                require(openFlux.link()!=null) { "Добавьте ссылку от выходного узла" }
+                stopDpi(); stopVpn(); awaitStopped(dpi=true,vpn=true)
+                check(!dpiActive() && !vpnActive()) { "Сначала остановите DPI и VPN" }
+                org.localroute.android.openflux.OpenFluxRuntime.update("starting","Ожидаем разрешение Android…")
+                startOpenFlux()
+            }
+            "stopOpenFlux" -> stopOpenFlux()
+            "stopAll" -> { stopOpenFlux(); stopDpi(); stopVpn(); stopTelegram(); awaitStopped(dpi=true,vpn=true) }
             "addTile" -> addTile(ShortcutMode.valueOf(payload as String))
             "open" -> {
                 val url=payload as? String ?: ""; require(url in setOf("https://t.me/TheLocalRoute","https://max.ru/channel_LocalRoute","https://github.com/iKokTot/local-route"))
@@ -313,11 +334,11 @@ class SharedRouteHost(
             "clearDiagnostics" -> { VpnDiagnostics.reset(); DiagnosticJournal.clear(); return response("Журнал очищен.") }
             "startDiagnosticCapture" -> {
                 VpnDiagnostics.startCapture()
-                return response("Запись включена на 90 секунд. Откройте ChatGPT, повторите сбой, затем вернитесь и скопируйте отчёт.")
+                return response("Запись включена на 90 секунд. Повторите проблему, затем вернитесь и скопируйте отчёт.")
             }
             else -> error("Команда не поддерживается")
         }
-        return response("Настройки применены.")
+        return response("Готово.")
     }
     private fun copy(value: String) {
         val clip=ClipData.newPlainText("Local Route",value)
@@ -329,21 +350,9 @@ class SharedRouteHost(
     private fun candidateStrategies(): List<DpiStrategy> {
         return AndroidStrategies.candidates(profile.lastSuccessfulStrategy(),profile.customCommand())
     }
-    private suspend fun runTrial(restart: Boolean,requested: String?=null): JSONObject {
-        if(dpiActive()) { stopDpi();awaitStopped(dpi=true);check(!dpiActive()) }
-        val candidates=candidateStrategies()
-        val ids=candidates.map { it.id }
-        val previous=if(restart) DpiTrialPlan() else profile.dpiTrial()
-        val plan=if(requested!=null) { require(requested in ids);DpiTrialPlan(setOf(requested),requested) } else previous.next(ids)
-        profile.saveDpiTrial(plan)
-        val candidate=candidates.firstOrNull { it.id==plan.candidate }
-            ?: return response("Все варианты (${candidates.size}) проверены. DPI остановлен. Можно начать заново, задать свою строку или отдельно использовать VPN.").put("ok",false)
-        try { startLocal(candidate) }
-        catch(cancelled: CancellationException) { throw cancelled }
-        catch(_: Exception) { return response("Вариант «${candidate.title}» не запустился. Нажмите «Не работает — следующий».").put("ok",false) }
-        return response("Вариант ${plan.tried.size} из ${candidates.size}: ${candidate.title}. Проверьте YouTube и Discord. Если не работает — нажмите «Не работает — следующий».").put("pendingConfirmation",true)
-    }
     private suspend fun startLocal(requested: DpiStrategy?=null) {
+        stopOpenFlux()
+        check(withTimeoutOrNull(10_000) { while(org.localroute.android.openflux.OpenFluxRuntime.active()) delay(100); true }==true) { "OpenFlux ещё останавливается" }
         if(dpiActive()) return
         require(profile.selectedServices().isNotEmpty() || profile.customDomains().isNotEmpty())
         val strategy=requested ?: AndroidStrategies.resolve(profile.lastSuccessfulStrategy(),profile.customCommand()) ?: AndroidStrategies.custom(profile.customCommand()) ?: AndroidStrategies.all.first()
@@ -352,6 +361,8 @@ class SharedRouteHost(
         check(withTimeoutOrNull(90_000) { while(LocalDpiRuntime.state.value.phase==EnginePhase.STARTING) delay(100); LocalDpiRuntime.state.value.phase==EnginePhase.ACTIVE }==true)
     }
     private suspend fun startServer() {
+        stopOpenFlux()
+        check(withTimeoutOrNull(10_000) { while(org.localroute.android.openflux.OpenFluxRuntime.active()) delay(100); true }==true) { "OpenFlux ещё останавливается" }
         if(vpnActive()) return
         require(!servers.uri().isNullOrBlank())
         VlessRuntime.update(TunnelState.Connecting,"Ожидаем разрешение Android и запуск VPN…")
@@ -359,7 +370,7 @@ class SharedRouteHost(
         check(withTimeoutOrNull(90_000) { while(VlessRuntime.state.value.state==TunnelState.Connecting) delay(100); VlessRuntime.state.value.state==TunnelState.Connected }==true)
     }
     private suspend fun awaitStopped(dpi: Boolean=false,vpn: Boolean=false) {
-        withTimeoutOrNull(10_000) { while((dpi && dpiActive()) || (vpn && vpnActive()) || CombinedRuntime.state.value.busy) delay(100) }
+        check(withTimeoutOrNull(20_000) { while((dpi && dpiActive()) || (vpn && vpnActive()) || CombinedRuntime.state.value.busy) delay(100);true }==true) { "Остановка ещё не подтверждена. Повторите попытку и скопируйте отчёт." }
     }
     private suspend fun importSubscription(raw: JSONObject): JSONObject {
         check(!vpnActive())

@@ -21,7 +21,9 @@ object CommunityConfigCompiler {
         rules += """{"ip_is_private":true,"outbound":"direct"}"""
         // Домен DPI имеет приоритет перед VPN-правилом целого приложения.
         if (plan.dpiEnabled && plan.domains.isNotEmpty()) rules += """{"domain_suffix":${array(plan.domains)},"outbound":"local-dpi"}"""
-        if (plan.dpiEnabled && additionalLocalPackages.isNotEmpty()) rules += """{"package_name":${array(additionalLocalPackages)},"outbound":"local-dpi"}"""
+        val localPackages=plan.services.map { it.packageName }.toSet()+additionalLocalPackages
+        // Voice/QUIC can carry only an IP: route selected native apps without relying on SNI.
+        if (plan.dpiEnabled && plan.serverEnabled && localPackages.isNotEmpty()) rules += """{"package_name":${array(localPackages)},"outbound":"local-dpi"}"""
         if (plan.serverEnabled && !plan.serverRoutes.allTraffic) {
             if (plan.serverRoutes.domains.isNotEmpty()) rules += """{"domain_suffix":${array(plan.serverRoutes.domains)},"outbound":"vless-out"}"""
             if (plan.serverRoutes.packages.isNotEmpty()) rules += """{"package_name":${array(plan.serverRoutes.packages)},"outbound":"vless-out"}"""

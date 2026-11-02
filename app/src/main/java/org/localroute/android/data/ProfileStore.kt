@@ -11,6 +11,7 @@ class ProfileStore(context: Context) {
     // only an HTTPS handshake. A profile is now saved only after the user has
     // confirmed that the real target app works.
     fun lastSuccessfulStrategy(): String? = prefs.getString("last_user_confirmed_strategy_v2", null)
+        ?.takeIf { org.localroute.android.core.AndroidStrategies.resolve(it,customCommand())!=null }
     fun saveLastSuccessfulStrategy(id: String) = prefs.edit().putString("last_user_confirmed_strategy_v2", id).apply()
     fun clearLastSuccessfulStrategy() = prefs.edit().remove("last_user_confirmed_strategy_v2").apply()
     fun customCommand(): String = prefs.getString("custom_byedpi_command", "") ?: ""

@@ -21,7 +21,8 @@ class ByeDpiProxy {
             jniCreateSocketWithCommandLine(arrayOf("ciadpi", *arguments)).also { fd = it }
         }
         if (listener < 0) return -1
-        return jniStartProxy(listener)
+        return try { jniStartProxy(listener) }
+        finally { mutex.withLock { if(fd==listener) fd=-1 } }
     }
 
     suspend fun stopProxy(): Int = mutex.withLock {

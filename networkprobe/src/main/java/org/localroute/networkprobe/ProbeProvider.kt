@@ -40,12 +40,13 @@ class ProbeProvider : ContentProvider() {
                     return MatrixCursor(arrayOf("result")).apply { addRow(arrayOf(local.inputStream.bufferedReader().use { it.readText() })) }
                 } finally { local.disconnect() }
             }
-            if (uri.getQueryParameter("localudp") == "1") {
+            if (uri.getQueryParameter("localudp") == "1" || uri.getQueryParameter("openfluxudp") == "1") {
                 val payload = "local-route-udp".toByteArray()
                 java.net.DatagramSocket().use { socket ->
                     requireNotNull(connectivity.activeNetwork).bindSocket(socket)
                     socket.soTimeout = 5000
-                    socket.send(java.net.DatagramPacket(payload, payload.size, java.net.InetAddress.getByName("10.0.2.2"), 18446))
+                    val port=if(uri.getQueryParameter("openfluxudp")=="1")18084 else 18446
+                    socket.send(java.net.DatagramPacket(payload, payload.size, java.net.InetAddress.getByName("10.0.2.2"), port))
                     // ByeDPI intentionally sends fake UDP packets; an echo fixture returns them too.
                     // Require the real payload, not merely any received datagram.
                     val deadline = android.os.SystemClock.elapsedRealtime() + 5000
@@ -59,7 +60,7 @@ class ProbeProvider : ContentProvider() {
                 }
             }
             val host = if (uri.getQueryParameter("dns") == "1") "example.com" else "93.184.216.34"
-            val url = if (uri.getQueryParameter("normal") == "1") "https://example.com/" else "http://$host:18089/route-check"
+            val url = if(uri.getQueryParameter("openflux")=="1") "http://10.0.2.2:18083/" else if (uri.getQueryParameter("normal") == "1") "https://example.com/" else "http://$host:18089/route-check"
             // This provider survives multiple TUN replacements. Bind each fresh request to
             // its UID's current network, not an HTTP client's cached former default.
             val connection = requireNotNull(connectivity.activeNetwork).openConnection(URL(url)) as HttpURLConnection

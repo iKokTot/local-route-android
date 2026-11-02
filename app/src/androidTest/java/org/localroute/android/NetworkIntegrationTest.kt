@@ -14,6 +14,27 @@ import org.localroute.android.tunnel.*
 
 @RunWith(AndroidJUnit4::class)
 class NetworkIntegrationTest {
+    @Test fun standaloneByeDpiRepeatedStartStopCarriesTcpAndUdp() {
+        foreground()
+        assertNull(android.net.VpnService.prepare(context))
+        fun command(action: String) {
+            val completed=CombinedRuntime.state.value.completed
+            ContextCompat.startForegroundService(context,Intent(context,CombinedVpnService::class.java).setAction(action))
+            await { CombinedRuntime.state.value.completed>completed && !CombinedRuntime.state.value.busy }
+        }
+        fun query(key: String)=context.contentResolver.query(Uri.parse("content://org.localroute.networkprobe/check?$key=1&waitvpn=1"),null,null,null,null)!!.use {check(it.moveToFirst());it.getString(0)}
+        try {
+            repeat(5) {
+                command(CombinedVpnService.START_DPI)
+                assertTrue(CombinedRuntime.state.value.plan.dpiEnabled)
+                assertFalse(CombinedRuntime.state.value.plan.serverEnabled)
+                assertEquals("local-route-dpi-fixture",query("localtcp"))
+                assertEquals("local-route-udp",query("localudp"))
+                command(CombinedVpnService.STOP_ALL)
+                assertFalse(CombinedRuntime.state.value.plan.requiresVpn)
+            }
+        } finally {command(CombinedVpnService.STOP_ALL)}
+    }
     @Test fun telegramStopAndScreenLockDoNotStopCombinedVpn() {
         foreground()
         val store=VlessStore(context); val previous=store.uri()

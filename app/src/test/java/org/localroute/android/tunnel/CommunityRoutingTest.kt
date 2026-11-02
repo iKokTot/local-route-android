@@ -6,6 +6,14 @@ import org.localroute.android.core.*
 import java.io.File
 
 class CommunityRoutingTest {
+    @Test fun nativeDpiAppsDoNotDependOnDomainSniffingForUdp() {
+        val plan=CombinedRouting(true,true,services=setOf(ServiceTarget.DISCORD))
+        val config=CombinedConfigCompiler.compile(plan,VlessUriParser.parse(link))
+        assertTrue(config.contains("\"package_name\":[\"com.discord\"],\"outbound\":\"local-dpi\""))
+        assertFalse(config.contains("com.google.android.youtube"))
+        assertEquals(TrafficDestination.LOCAL_DPI,plan.destinationForPackage("com.discord"))
+        assertEquals(TrafficDestination.SERVER,plan.destinationForPackage("com.android.chrome"))
+    }
     private val link = "vless://00000000-0000-4000-8000-000000000000@example.com:443?security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=firefox&alpn=h2%2Chttp%2F1.1"
     @Test fun realityKeepsFingerprintAndAlpn() {
         val endpoint = VlessUriParser.parse(link)

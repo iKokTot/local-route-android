@@ -15,6 +15,78 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
+    @Test fun dpiPrimaryStartsWithoutPresetWizardAndStopsAgain() {
+        attach()
+        js("navigate('lab')")
+        assertEquals(false,js("document.querySelector('#start-saved-dpi').disabled"))
+        assertEquals(false,js("Boolean(document.querySelector('[data-auto-select]').offsetParent)"))
+        js("document.querySelector('#start-saved-dpi').click()")
+        try {
+            await("!pending && state.active")
+            assertEquals(false,js("state.dpiTrial.pendingConfirmation"))
+            assertEquals(false,js("Boolean(document.querySelector('#android-dpi-feedback').offsetParent)"))
+            assertEquals(false,js("Boolean(document.querySelector('#test-results').offsetParent)"))
+            assertEquals("Остановить DPI",js("document.querySelector('#start-saved-dpi').textContent"))
+            assertEquals(false,js("document.querySelector('#start-saved-dpi').disabled"))
+            val completed=org.localroute.android.tunnel.CombinedRuntime.state.value.completed
+            js("document.querySelector('[data-help-mode=dpi]').click();document.querySelector('#mode-help-dialog [data-help-action=restart]').click()")
+            await("!pending && state.active")
+            assertTrue(org.localroute.android.tunnel.CombinedRuntime.state.value.completed>completed)
+        } finally {
+            js("document.querySelector('#start-saved-dpi').click()")
+            await("!pending && !state.active")
+            js("navigate('control')")
+        }
+    }
+    @Test fun recoveryActionsAreAvailableAndResetDoesNotEraseVpn() {
+        attach()
+        js("navigate('lab');document.querySelector('[data-help-mode=dpi]').click()")
+        await("Boolean(document.querySelector('#mode-help-dialog')?.open)")
+        assertEquals(true,js("document.querySelector('#mode-help-dialog').textContent.includes('Скопировать отчёт')"))
+        instrumentation.runOnMainSync { activity.onBackPressedDispatcher.onBackPressed() }
+        await("!document.querySelector('#mode-help-dialog')")
+        js("navigate('settings');document.querySelector('[data-mode-settings=lab]').open=true;document.querySelector('#android-dpi-profile').open=true;document.querySelector('#dpi-command').value='--tlsrec 1+s';document.querySelector('#save-dpi-command').click()")
+        await("!pending && state.dpiCommand==='--tlsrec 1+s'")
+        js("window.beforeReset=JSON.stringify([state.vlessServers,state.vless,state.bypassApps]);document.querySelector('#reset-dpi-command').click()")
+        await("Boolean(document.querySelector('#confirmation-dialog')?.open)")
+        js("document.querySelector('#confirmation-dialog .primary').click()")
+        await("!pending && state.dpiCommand.includes('-Kt,h')")
+        assertEquals(true,js("JSON.stringify([state.vlessServers,state.vless,state.bypassApps])===window.beforeReset"))
+        js("navigate('control')")
+    }
+    @Test fun unsavedDpiCommandRequiresExplicitDiscard() {
+        attach()
+        js("navigate('lab');navigate('settings');document.querySelector('#android-dpi-profile').open=true;document.querySelector('#dpi-command').value='--tlsrec 1+s';document.querySelector('#dpi-command').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#back-settings').click()")
+        await("Boolean(document.querySelector('#confirmation-dialog')?.open)")
+        instrumentation.runOnMainSync {activity.onBackPressedDispatcher.onBackPressed()}
+        await("!document.querySelector('#confirmation-dialog')")
+        assertEquals("settings",js("currentPage"))
+        assertEquals("--tlsrec 1+s",js("document.querySelector('#dpi-command').value"))
+        js("document.querySelector('#back-settings').click()")
+        await("Boolean(document.querySelector('#confirmation-dialog')?.open)")
+        js("document.querySelector('#confirmation-dialog .primary').click()")
+        await("currentPage==='lab' && !dirty('dpi')")
+        assertEquals(true,js("document.querySelector('#dpi-command').value===state.dpiCommand"))
+        js("navigate('control')")
+    }
+    @Test fun obsoleteDpiChecksStayHiddenEvenWhenLegacyTrialIsPresent() {
+        attach()
+        js("navigate('lab');state.dpiTrial={pendingConfirmation:true,candidate:'old',hasNext:true};renderState()")
+        assertEquals(false,js("Boolean(document.querySelector('#android-dpi-feedback').offsetParent)"))
+        js("navigate('settings');document.querySelector('[data-mode-settings=lab]').open=true")
+        assertEquals(false,js("Boolean(document.querySelector('#strategy-tests').offsetParent)"))
+        js("refreshState();navigate('control')")
+    }
+    @Test fun openFluxNeedsProfileAndDoesNotPretendToBeConnected() {
+        attach()
+        js("navigate('control');document.querySelector('#toggle-openflux').click()")
+        await("Boolean(document.querySelector('#openflux-dialog')?.open)")
+        assertEquals(true,js("document.querySelector('#openflux-dialog').textContent.includes('Без него выхода в интернет не будет')"))
+        assertEquals(false,js("state.openFlux.phase==='connected'"))
+        instrumentation.runOnMainSync { activity.onBackPressedDispatcher.onBackPressed() }
+        await("!document.querySelector('#openflux-dialog').open")
+        assertEquals(true,js("document.querySelector('#openflux-input').value===''"))
+    }
     @Test fun connectionReportIsCompactAndDiagnosticsHaveInsets() {
         attach()
         js("navigate('routes');renderVlessReport({results:[{label:'example.com',success:true,detail:'HTTPS-ответ получен',durationMs:123},{label:'www.wikipedia.org',success:false,level:'warning',detail:'Сайт ответил HTTP 403; это не обрыв VPN',durationMs:456}]})")
@@ -141,12 +213,13 @@ class SharedInterfaceTest {
         attach()
         js("window.savedAuditState=state;state={...state,vlessActive:true,vlessConfigured:true,vpnCheck:{verified:null},networkAvailable:true};renderState()")
         try {
-            assertEquals("Движок запущен",js("document.querySelector('#vless-state').textContent"))
-            assertEquals(true,js("document.querySelector('#vless-detail').textContent.includes('ещё не проверено')"))
+            assertEquals("Включён",js("document.querySelector('#vless-state').textContent"))
+            assertEquals(false,js("document.querySelector('#vless-detail').textContent.includes('провер')"))
+            assertEquals(true,js("state.vpnCheck.verified===null"))
             js("state={...state,networkAvailable:false};renderState()")
             assertEquals("Ожидание сети",js("document.querySelector('#vless-state').textContent"))
             js("state={...state,networkAvailable:true,vpnCheck:{verified:true}};renderState()")
-            assertEquals(true,js("document.querySelector('#vless-detail').textContent.includes('не проверка всех приложений')"))
+            assertEquals(false,js("document.querySelector('#vless-detail').textContent.includes('все приложения работают')"))
         } finally { js("state=savedAuditState;renderState()") }
     }
     @Test fun exceptionsHaveSearchIconsAndOneConnectionEditor() {
@@ -181,6 +254,7 @@ class SharedInterfaceTest {
             assertEquals(true, js("JSON.stringify(state.vlessServers)===serversBefore"))
             assertEquals(false, js("document.querySelector('#app-error').textContent.includes('private-key')"))
             assertEquals(true, js("document.querySelector('#app-error').textContent.includes('VLESS')"))
+            assertEquals(true,js("document.querySelector('#subscription-dialog [data-inline-error]').textContent.includes('VLESS')"))
         } finally { js("document.querySelector('#subscription-dialog').close();showError('');navigate('control')") }
     }
     @Test fun guideIsManualAndFailedExclusionsRollBack() {

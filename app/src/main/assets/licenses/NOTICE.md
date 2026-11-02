@@ -1,5 +1,13 @@
 # Local Route Android — third-party notices
 
+## Experimental OpenFlux integration
+
+OpenFlux, copyright p1neappleXpress and contributors, GPL-3.0-or-later.
+Pinned source: https://github.com/p1neappleXpress/OpenFlux/tree/4f9c786cdd1d9fcd0c133e2e0fec0c5a12522610
+(v0.13.0). The isolated executable uses the upstream mobile module, including
+its transitive dependencies. Local adapter source: scripts/openflux-helper/main.go.
+Build instructions: docs/OPENFLUX.md. Full GPL-3.0 text is included in this app.
+
 ## Licence of this Android project
 
 Local Route Android is GPL-3.0-or-later. A complete license copy is packaged as

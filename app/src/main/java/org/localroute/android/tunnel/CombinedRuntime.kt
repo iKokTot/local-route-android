@@ -14,5 +14,5 @@ object CombinedRuntime {
     fun queued() = mutable.update { it.copy(pending = it.pending + 1) }
     fun completed(plan: CombinedRouting) = mutable.update { it.copy(plan = plan, pending = (it.pending - 1).coerceAtLeast(0), completed = it.completed + 1) }
     fun stopped() = mutable.update { it.copy(plan = CombinedRouting(), networkAvailable = null) }
-    fun networkAvailable(available: Boolean) = mutable.update { it.copy(networkAvailable = available) }
+    fun networkAvailable(available: Boolean?) = mutable.update { it.copy(networkAvailable = available) }
 }

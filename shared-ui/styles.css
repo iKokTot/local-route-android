@@ -329,3 +329,19 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
 .platform-android .diagnostics-settings #technical-log { padding: 12px; }
 .platform-android .diagnostics-settings > button { max-width: 100%; }
 .platform-android .diagnostics-settings #activity-log.hidden { display: none; }
+#openflux-dialog {
+  color:var(--on-surface); background:var(--surface-container);
+  border:1px solid var(--outline-variant); border-radius:20px;
+  padding:20px; width:min(480px,calc(100vw - 32px));
+  max-height:calc(100dvh - 32px); overflow-y:auto;
+}
+#openflux-dialog::backdrop { background:#000b; }
+#openflux-dialog p { line-height:1.5; margin-block:12px; }
+#openflux-input { width:100%; box-sizing:border-box; margin-block:8px; }
+.platform-android #openflux-card { min-height:118px; }
+#mode-help-dialog { color:var(--on-surface);background:var(--surface-container);border:1px solid var(--outline-variant);border-radius:20px;padding:20px;width:min(460px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow-y:auto; }
+#mode-help-dialog::backdrop { background:#000b; }
+#mode-help-dialog p { line-height:1.5;margin-block:12px; }
+.recovery-actions { display:flex;flex-direction:column;gap:10px; }
+.recovery-actions button { min-height:48px; }
+.mode-help { white-space:nowrap; }

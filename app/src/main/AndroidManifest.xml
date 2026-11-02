@@ -20,6 +20,10 @@
             <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Совместные локальные и серверные маршруты DPI/VLESS"/>
         </service>
+        <service android:name=".openflux.OpenFluxVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false" android:foregroundServiceType="specialUse">
+            <intent-filter><action android:name="android.net.VpnService"/></intent-filter>
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Экспериментальный пользовательский OpenFlux туннель"/>
+        </service>
         <service android:name=".telegram.TelegramProxyService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Локальный MTProto WebSocket прокси для Telegram"/>
         </service>

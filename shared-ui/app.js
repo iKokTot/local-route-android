@@ -38,6 +38,7 @@ let currentPage = 'control';
 let toastTimer;
 let progressTimer;
 let progressOperation = null;
+let lastActionMode = 'dpi';
 const scrollPositions = {};
 
 function toast(message) {
@@ -51,10 +52,41 @@ function showError(message) {
   $('#app-error').textContent = message;
   $('#app-error').classList.toggle('hidden', !message);
   if (message && changed) toast(message);
+  if(isAndroid()) for(const dialog of all('#subscription-dialog, #openflux-dialog')) {
+    let inline=dialog.querySelector('[data-inline-error]');
+    if(!inline) {inline=document.createElement('p');inline.dataset.inlineError='true';inline.className='notice error hidden';inline.setAttribute('role','alert');dialog.append(inline);dialog.addEventListener('close',()=>showError(''));}
+    inline.textContent=dialog.open?message:'';inline.classList.toggle('hidden',!dialog.open||!message);
+  }
+  if(isAndroid()) {
+    let actions=$('#error-actions');
+    if(!actions) {actions=document.createElement('div');actions.id='error-actions';actions.className='card-actions';$('#app-error').after(actions);}
+    actions.replaceChildren();actions.classList.toggle('hidden',!message);
+    if(message) {
+      const button=document.createElement('button');button.className='text-button';button.textContent='Что можно сделать?';
+      button.dataset.helpMode=currentPage==='routes'?'vless':currentPage==='telegram'?'telegram':lastActionMode;actions.append(button);
+    }
+  }
+}
+function showModeHelp(mode) {
+  if($('#mode-help-dialog')) return;
+  const dialog=document.createElement('dialog');dialog.id='mode-help-dialog';dialog.dataset.mode=mode;
+  const names={dpi:'DPI',vless:'VPN',telegram:'Telegram'};
+  const advice=mode==='dpi'?'Попробуйте перезапустить DPI. Если меняли свою строку, можно вернуть стандартную. Подключения VPN и исключения не удаляются.':mode==='vless'?'Попробуйте другой сервер или перезапустите VPN. Если нет подключения, проверьте доступность обычного интернета.': 'Откройте Telegram и убедитесь, что предложенный прокси включён. Если сообщения не загружаются, можно открыть настройки или скопировать отчёт.';
+  const primary=mode==='telegram'?`<button class="button primary" data-help-action="telegram">${state.telegramActive?'Открыть Telegram':'Включить прокси'}</button>`:mode==='vless'&&!state.vlessConfigured?'<button class="button primary" data-help-action="add">Добавить подключение</button>':'<button class="button primary" data-help-action="restart">Перезапустить</button>';
+  dialog.innerHTML=`<h2>${names[mode]}: если не работает</h2><p>${advice}</p><div class="recovery-actions">${primary}<button class="button outlined" data-help-action="settings">${mode==='vless'?'Серверы и исключения':'Открыть настройки'}</button>${mode==='dpi'?'<button class="text-button" data-help-action="reset">Вернуть стандартную строку DPI</button>':''}<button class="text-button" data-help-action="report">Скопировать отчёт</button><button class="text-button" data-help-action="close">Закрыть</button></div>`;
+  dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+}
+async function resetDpiDefaults() {
+  if(pending){toast('Дождитесь завершения текущего действия.');return;}
+  if(!await confirmAction('Своя строка будет заменена стандартной. DPI будет выключен. VPN, серверы и исключения не изменятся.','Восстановить'))return;
+  return perform('save','Восстанавливаю стандартную строку…',async()=>{
+    if(state.active){const stopped=await window.localRoute.stopEngine();if(stopped.ok===false)return stopped;}
+    return window.localRoute.resetDpiCommand();
+  },()=>{$('#dpi-command').value=state.dpiCommand;});
 }
 function dirty(kind) {
   if (!state) return false;
-  if (kind === 'dpi') return JSON.stringify(dpiDraft) !== savedDpi;
+  if (kind === 'dpi') return JSON.stringify(dpiDraft) !== savedDpi || (isAndroid() && $('#dpi-command') && $('#dpi-command').value !== state.dpiCommand);
   if (kind === 'vless') return JSON.stringify(vlessDraft) !== savedVless;
   return JSON.stringify(telegramDraft) !== savedTelegram;
 }
@@ -62,6 +94,7 @@ function resetDraft(kind) {
   if (kind === 'dpi') {
     dpiDraft = { services: [...state.profile.services], customDomains: [...state.profile.customDomains], strategy: state.profile.strategy };
     savedDpi = JSON.stringify(dpiDraft);
+    if(isAndroid() && $('#dpi-command'))$('#dpi-command').value=state.dpiCommand;
   } else if (kind === 'vless') {
     vlessDraft = { uri: '', mode: state.vless?.mode || 'all', services: [...(state.vless?.services || [])], apps: [...(state.vless?.apps || [])], customDomains: [...(state.vless?.customDomains || [])] };
     savedVless = JSON.stringify(vlessDraft);
@@ -90,7 +123,7 @@ function showGuide() {
   if(dirty('dpi') || dirty('telegram')) { toast('Сначала сохраните или сбросьте изменения в настройках.'); return; }
   const steps = [
     ['VPN — интернет через ваш сервер', 'Откройте вкладку VPN и нажмите «Добавить подключение». Вставьте VLESS-ссылку или HTTPS-подписку от владельца сервера. Само приложение бесплатно и без рекламы, но бесплатные серверы не выдаёт. После добавления выберите сервер и нажмите «Подключить».', 'routes'],
-    ['DPI — YouTube и Discord без сервера', 'На вкладке DPI запустите проверку профилей. Откройте видео или голосовой чат и вернитесь: подтвердите рабочий вариант или попробуйте следующий. Результат зависит от вашей сети. DPI и VPN можно включать вместе.', 'lab'],
+    ['DPI — YouTube и Discord без сервера', 'Нажмите «Запустить DPI» — основной профиль уже настроен. Без VPN используется прямой режим ByeDPI для интернета на телефоне. Вместе с VPN локальный DPI применяется к выбранным сервисам, остальное идёт через сервер. Проверьте видео или голос: запуск движка сам по себе не гарантирует доступ.', 'lab'],
     ['Telegram — отдельное подключение', 'На вкладке Telegram запустите прокси, затем нажмите «Подключить Telegram» и подтвердите его в Telegram. «Прокси готов» означает запуск на телефоне, а не проверку сообщений. Откройте чат и проверьте загрузку.', 'telegram'],
     ['Управление и исключения', 'Обзор показывает включённые режимы. Каждый можно остановить отдельно. В VPN весь интернет идёт через сервер, исключения — напрямую. При совместном DPI/VPN исключённые приложения обходят оба механизма. Быстрые кнопки шторки и эта инструкция доступны в настройках.', 'control']
   ];
@@ -139,11 +172,8 @@ function renderControls() {
   }
   $('#page-content').inert = false;
   if (isAndroid()) {
-    const trial = Boolean(state.active && state.dpiTrial?.pendingConfirmation);
-    $('#android-dpi-feedback').classList.toggle('hidden', !trial);
-    $('#test-results').classList.toggle('hidden', trial);
-    $('#test-results').closest('section').classList.toggle('hidden', !trial && !$('#test-results .test-result'));
-    $('#test-results').closest('.service-feedback').classList.toggle('hidden', !trial && !$('#test-results .test-result'));
+    $('#android-dpi-feedback').classList.add('hidden');
+    $('#test-results').closest('.service-feedback').classList.add('hidden');
     const servers = state.vlessServers || [];
     $('#toggle-vless').classList.toggle('hidden', !state.vlessConfigured);
     $('#test-vless').classList.toggle('hidden', !state.vlessConfigured);
@@ -151,6 +181,14 @@ function renderControls() {
     $('#refresh-subscription').classList.toggle('hidden', !state.vlessSubscriptionSaved);
     $('#delete-vless').classList.toggle('hidden', !servers.length && !state.vlessConfigured);
     $('#single-server-editor').classList.add('hidden');
+    for(const [mode,id,active,page] of [['dpi','start-dpi',state.active,'lab'],['vless','start-vless',state.vlessActive,'routes'],['telegram','start-telegram',state.telegramActive,'telegram']]) {
+      const button=$('#'+id).parentElement.querySelector('.text-button');
+      button.textContent=active?'Не работает?':'Настроить →';
+      if(active){button.dataset.helpMode=mode;delete button.dataset.page;delete button.dataset.modeSettings;}
+      else {delete button.dataset.helpMode;delete button.dataset.page;button.dataset.modeSettings=page;}
+    }
+    $('#vpn-troubleshooting')?.classList.toggle('hidden',!state.vlessConfigured);
+    $('#stop-for-dpi-edit').classList.toggle('hidden',!state.active);
     $('#vless-profile-hint').classList.add('hidden');
     $('#open-subscription').classList.toggle('primary',!state.vlessConfigured);
     $('#open-subscription').classList.toggle('outlined',Boolean(state.vlessConfigured));
@@ -176,8 +214,8 @@ function renderControls() {
   disable('#save-vless', vlessLocked || !dirty('vless'), state.vlessActive ? 'Сначала остановите VLESS' : 'Нет изменений для сохранения');
   disable('#test-vless', busy || !state.vlessConfigured || dirty('vless'), 'Сначала сохраните профиль');
   disable('#start-vless, #toggle-vless', state.vlessActive ? pending?.kind==='stop' : busy || !state.vlessConfigured || dirty('vless'), 'Добавьте и выберите сервер; для редактирования остановите VPN');
-  disable('#start-dpi', state.active ? pending?.kind==='stop' : busy || !state.verifiedStrategy || dirty('dpi'), 'Сначала проверьте и сохраните профиль DPI');
-  disable('#start-saved-dpi', busy || state.active || !state.verifiedStrategy || dirty('dpi'), 'Сначала подберите и сохраните стратегию');
+  disable('#start-dpi', state.active ? pending?.kind==='stop' : busy || (!isAndroid() && !state.verifiedStrategy) || dirty('dpi'), 'Сначала сохраните настройки DPI');
+  disable('#start-saved-dpi', isAndroid()&&state.active ? pending?.kind==='stop' : busy || (!isAndroid() && !state.verifiedStrategy) || dirty('dpi'), 'Сначала сохраните настройки DPI');
   disable('[data-auto-select], .test-strategy', busy || dirty('dpi') || (!state.profile.services.length && !state.profile.customDomains.length), 'Сначала выберите YouTube или Discord и сохраните сервисы');
   disable('.stop-engine', pending?.kind==='stop' || (!state.active && !dpiBusy), 'DPI уже остановлен');
   disable('#telegram-port', tgLocked, 'Остановите прокси перед изменением порта');
@@ -187,9 +225,9 @@ function renderControls() {
   disable('#start-telegram', state.telegramActive ? pending?.kind==='stop' : busy || dirty('telegram'), 'Сначала сохраните настройки Telegram');
   disable('#telegram-stop', pending?.kind==='stop' || !state.telegramActive, 'Прокси уже остановлен');
   disable('#telegram-connect, #telegram-copy', busy || !state.telegramActive, 'Сначала запустите прокси');
-  const canStart = (!state.active && state.verifiedStrategy) || (!state.vlessActive && state.vlessConfigured) || (!state.telegramActive && state.telegram?.enabled);
+  const canStart = (!state.active && (isAndroid() || state.verifiedStrategy)) || (!state.vlessActive && state.vlessConfigured) || (!state.telegramActive && state.telegram?.enabled);
   disable('#start-all', busy || !canStart || dirty('dpi') || dirty('vless') || dirty('telegram'), 'Сначала настройте компоненты и сохраните изменения');
-  const canStop = state.active || state.vlessActive || state.telegramActive || Boolean(pending) || Boolean(state.operation);
+  const canStop = state.active || state.vlessActive || state.telegramActive || ['starting','connecting','connected'].includes(state.openFlux?.phase) || Boolean(pending) || Boolean(state.operation);
   disable('#stop-all', !canStop || pending?.kind === 'stop', 'Все компоненты уже остановлены');
   disable('#autostart-toggle, #run-check, #refresh-log, #export-diagnostics, #clear-diagnostics', busy, 'Дождитесь завершения операции');
   disable('#delete-vless', busy || state.vlessActive || (!state.vlessConfigured && !state.vlessServers?.length), 'Сначала остановите VLESS');
@@ -225,13 +263,28 @@ function renderControls() {
 }
 function renderState() {
   if (!state) return;
-  const running = [state.active && 'DPI', state.vlessActive && 'VPN', state.telegramActive && 'Telegram'].filter(Boolean);
+  if(isAndroid() && state.openFlux) {
+    let card=$('#openflux-card');
+    if(!card) {
+      card=document.createElement('article');card.id='openflux-card';card.className='panel component-card';
+      card.innerHTML='<div class="component-heading"><span class="component-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h12l-3-3m7 11H8l3 3M16 8l-3 3M8 16l3-3"/></svg></span><span class="route-state" id="openflux-state"></span></div><h3>OpenFlux</h3><p class="component-subtitle">Экспериментальный туннель</p><p class="component-detail" id="openflux-detail"></p><div class="card-actions"><button class="button tonal" id="toggle-openflux">Включить</button><button class="text-button" id="configure-openflux">Подключение →</button></div>';
+      $('.component-grid').append(card);
+    }
+    const flux=state.openFlux,active=['starting','connecting','connected'].includes(flux.phase);
+    card.classList.toggle('is-running',active);
+    $('#openflux-state').textContent=flux.phase==='connected'?'Узел подключён':active?'Подключаемся…':flux.phase==='error'?'Нет соединения':flux.configured?'Готов к проверке':'Нет подключения';
+    $('#openflux-detail').textContent=active||flux.phase==='error'?flux.message:'Нужен свой выходной узел. Работает отдельно от DPI и VPN.';
+    $('#toggle-openflux').textContent=active?'Остановить':'Проверить OpenFlux';
+    $('#configure-openflux').disabled=active;
+  }
+  const fluxActive=['starting','connecting','connected'].includes(state.openFlux?.phase);
+  const running = [state.active && 'DPI', state.vlessActive && 'VPN', state.telegramActive && 'Telegram', fluxActive && 'OpenFlux'].filter(Boolean);
   for (const [selector, active] of [['#dpi-run-state', state.active], ['#vless-run-state', state.vlessActive], ['#telegram-run-state', state.telegramActive]]) {
     $(selector).closest('.component-card').classList.toggle('is-running', Boolean(active));
   }
   $('#engine-status').textContent = running.length ? `Запущено: ${running.join(' · ')}` : 'Компоненты выключены';
   $('#status-dot').className = `status-dot ${pending || state.telegramBusy ? 'waiting' : (running.length ? 'active' : '')}`;
-  $('#protection-title').textContent = running.length === 3 ? 'Все компоненты запущены' : (running.length ? `Запущено компонентов: ${running.length} из 3` : 'Компоненты выключены');
+  $('#protection-title').textContent = fluxActive ? 'OpenFlux · экспериментальный режим' : running.length === 3 ? 'Все компоненты запущены' : (running.length ? `Запущено компонентов: ${running.length} из 3` : 'Компоненты выключены');
   const ready = [state.verifiedStrategy && 'DPI', state.vlessConfigured && 'VPN', state.telegram?.enabled && 'Telegram'].filter(Boolean);
   status('#dpi-run-state', state.active ? 'Запущен' : (state.verifiedStrategy ? 'Готов к запуску' : 'Нужен подбор'), state.active ? 'active' : '');
   status('#vless-run-state', state.vlessActive ? 'Запущен' : (state.vlessConfigured ? 'Готов к запуску' : 'Не настроен'), state.vlessActive ? 'active' : '');
@@ -247,20 +300,24 @@ function renderState() {
   $('#vless-detail').textContent = state.vlessConfigured ? (allTraffic ? 'Весь внешний трафик; локальная сеть и TGWs — напрямую.' : 'Выбранные сайты и приложения через ваш сервер.') : 'Добавьте VLESS-ссылку и выберите маршруты.';
   $('#telegram-detail').textContent = state.telegramActive ? 'Прокси готов. Подтвердите подключение в Telegram.' : (state.telegramError || 'После запуска подключите прокси в Telegram.');
   $('#telegram-error').textContent = state.telegramError || '';
-  $('#vless-profile-hint').textContent = state.vlessConfigured ? 'Ссылка уже сохранена и скрыта. Вставьте новую, чтобы заменить сервер.' : 'Ссылка хранится на компьютере в зашифрованном виде и не попадает в журнал.';
+  $('#vless-profile-hint').textContent = state.vlessConfigured ? 'Ссылка уже сохранена и скрыта. Вставьте новую, чтобы заменить сервер.' : `Ссылка хранится ${isAndroid()?'на телефоне':'на компьютере'} в зашифрованном виде и не попадает в журнал.`;
   $('#route-mode-title').textContent = allTraffic ? 'Через сервер VLESS' : 'Напрямую';
   $('#route-mode-description').textContent = state.vlessConfigured ? (allTraffic ? 'Сохранённый профиль: весь внешний трафик через сервер. Локальная сеть и TGWs — напрямую.' : 'Сохранённый профиль: только выбранные сайты и приложения через сервер. Остальные соединения — напрямую.') : 'После сохранения здесь появится описание маршрута для остального трафика.';
   if(isAndroid()) {
     $('#toggle-vless').textContent = state.vlessActive ? 'Отключить VPN' : 'Подключить';
     $('#vless-detail').textContent = state.vlessConfigured ? 'Весь интернет через сервер; исключения — напрямую.' : 'Добавьте подключение и выберите сервер.';
-    $('#dpi-strategy-description').textContent=state.dpiTrial?.pendingConfirmation ? 'Запущен кандидат, он ещё не сохранён как рабочий. Проверьте видео и голос, затем выберите результат ниже.' : state.verifiedStrategy ? 'Профиль сохранён после вашей проверки. Можно запустить его или начать новую проверку вариантов.' : 'Профили проверяются вами по очереди: запустите вариант, откройте сервис и выберите результат ниже.';
-    $('#dpi-trial-status').textContent=state.dpiTrial?.candidate ? 'Вариант '+state.dpiTrial.attempt+' из '+state.dpiTrial.total+': '+state.dpiTrial.name+'. Если не работает — нажмите следующий вариант.' : 'Здесь появятся кнопки оценки запущенного варианта. Повторный запуск сохранённого профиля сам по себе не ищет другой.';
-    if(state.dpiTrial?.pendingConfirmation)status('#dpi-strategy-state','Нужна ваша проверка','waiting');
-    $('#dpi-detail').textContent=state.active ? 'Движок запущен. Проверьте видео или голосовой чат.' : (state.verifiedStrategy ? 'Профиль сохранён' : 'Подберите профиль на вкладке DPI');
+    $('#dpi-strategy-description').textContent='Готовые настройки ByeDPI. Достаточно нажать «Запустить DPI». Своя строка доступна в настройках.';
+    $('#start-saved-dpi').textContent=state.active?'Остановить DPI':'Запустить DPI';
+    if(!state.active)status('#dpi-strategy-state',state.verifiedStrategy?'Сохранён':'Готов к запуску','');
+    $('#dpi-trial-status').textContent=state.dpiTrial?.candidate ? 'Проверьте видео или голосовой чат. Запуск движка ещё не подтверждает доступность сервиса.' : 'Подтверждение сохраняется только после вашей проверки.';
+    $('#reject-dpi').textContent=state.dpiTrial?.hasNext?'Не работает — следующий':'Не работает — настройки';
+    status('#dpi-strategy-state',state.active?'Включён':'Выключен',state.active?'active':'');
+    $('#dpi-detail').textContent=state.active ? (state.vlessActive?'DPI для выбранных сервисов · VPN для остального':'Прямой ByeDPI · без сервера') : 'Готов к запуску. Дополнительная настройка не нужна.';
+    if(!state.active)status('#dpi-run-state','Готов к запуску','');
     const checked = state.vpnCheck?.verified;
-    status('#vless-state', state.vlessActive ? 'Движок запущен' : (state.vlessConfigured ? 'Готов к подключению' : 'Не настроен'), state.vlessActive ? 'active' : '');
-    $('#vless-detail').textContent = state.vlessActive ? (checked === true ? 'HTTPS-ответ получен при последней проверке. Это не проверка всех приложений.' : checked === false ? 'Проверочные сайты не ответили. Проверьте нужное приложение или другой сервер.' : 'Соединение ещё не проверено. Нажмите «Проверить соединение».') : (state.vlessConfigured ? 'Сервер выбран. Весь интернет через VPN, исключения — напрямую.' : 'Добавьте ссылку → выберите сервер → подключите VPN.');
-    $('#telegram-detail').textContent = state.telegramActive ? (state.telegramVerified === true ? 'Тестовый узел ответил. Подключите прокси в Telegram и проверьте сообщения.' : 'Локальный прокси запущен. Это ещё не подтверждает загрузку сообщений.') : (state.telegramError || 'После запуска подключите прокси в Telegram.');
+    status('#vless-state', state.vlessActive ? 'Включён' : (state.vlessConfigured ? 'Готов к подключению' : 'Не настроен'), state.vlessActive ? 'active' : '');
+    $('#vless-detail').textContent = state.vlessActive ? 'VPN включён. Исключённые приложения работают напрямую.' : (state.vlessConfigured ? 'Сервер выбран. Можно подключаться.' : 'Добавьте подключение, затем выберите сервер.');
+    $('#telegram-detail').textContent = state.telegramActive ? 'Откройте Telegram и включите предложенный прокси.' : (state.telegramError || 'После запуска подключите прокси в Telegram.');
     if(state.telegramActive && state.telegramVerified === false) $('#telegram-detail').textContent=state.telegramCheckMessage || 'Прокси запущен, но Telegram пока не ответил.';
     if(state.networkAvailable === false) {
       if(state.vlessActive) {status('#vless-state','Ожидание сети','waiting');$('#vless-detail').textContent='Нет подключения к интернету. VPN остаётся запущенным и ждёт сеть.';}
@@ -327,10 +384,17 @@ function configurePlatform() {
     $('#bypass-empty').classList.toggle('hidden',visible>0);
   });
   $('#android-dpi-profile').classList.remove('hidden');
-  $('#android-dpi-feedback').classList.remove('hidden');
+  $('#save-dpi-command').textContent='Сохранить строку';
+  $('#telegram-result').classList.add('hidden');
+  $('#android-dpi-feedback').classList.add('hidden');
   $('#strategy-tests').closest('details').querySelector('.setting-description').textContent='Выбранный вариант включится для вашей проверки. Если видео или голос не работают, нажмите «Не работает — следующий». Рабочий профиль сохраняется только после подтверждения.';
   $('#dpi-command').value=state.dpiCommand || '';
-  document.querySelector('[data-auto-select]').textContent='Начать проверку профилей';
+  document.querySelector('[data-auto-select]').textContent='Проверить основной профиль';
+  document.querySelector('[data-auto-select]').classList.add('hidden');
+  all('.stop-engine').forEach(button=>button.classList.add('hidden'));
+  $('#start-saved-dpi').textContent='Запустить DPI';
+  document.querySelector('.strategy-panel h2').textContent='Локальный DPI';
+  document.querySelector('[data-page-panel="lab"] > .page-intro').textContent='Включите DPI и откройте YouTube или Discord. Без VPN используется прямой режим ByeDPI.';
   $('#manual-vless-app').placeholder='com.example.app';
   document.querySelector('label[for="manual-vless-app"]').textContent='Другое приложение · имя пакета';
   $('#pick-vless-app').classList.add('hidden');
@@ -365,9 +429,18 @@ function configureAndroidSettings() {
     settings.insertBefore(group, links); groups[mode] = group;
   }
   groups.lab.append($('#android-dpi-profile'));
+  const dpiHelp=document.createElement('p');dpiHelp.className='info-note';dpiHelp.textContent='Без VPN используется прямой режим ByeDPI для всего интернета на телефоне, без сервера и без VPN-исключений. Список сервисов ниже применяется при совместной работе с VPN.';groups.lab.insertBefore(dpiHelp,groups.lab.querySelector('summary').nextSibling);
   groups.routes.append(document.querySelector('.route-note'));
   groups.routes.append(document.querySelector('#general-platform-settings > details'));
   groups.lab.append($('#strategy-tests').closest('details'));
+  $('#strategy-tests').closest('details').classList.add('hidden');
+  groups.lab.querySelector('.service-settings h2').textContent='Сервисы при совместной работе с VPN';
+  const routeDetails=document.createElement('details');routeDetails.className='advanced';
+  const routeSummary=document.createElement('summary');routeSummary.textContent='DPI вместе с VPN';routeDetails.append(routeSummary,groups.lab.querySelector('.service-settings'));groups.lab.append(routeDetails);
+  routeDetails.querySelector('.service-settings .panel > p:last-child').textContent='Для изменения остановите DPI. Без VPN этот список не ограничивает прямой режим ByeDPI.';
+  $('#android-dpi-profile summary').textContent='Дополнительно: своя строка ByeDPI';
+  const stopEdit=document.createElement('button');stopEdit.id='stop-for-dpi-edit';stopEdit.className='button outlined hidden';stopEdit.textContent='Остановить DPI для изменения';groups.lab.insertBefore(stopEdit,$('#android-dpi-profile'));
+  const reset=document.createElement('button');reset.id='reset-dpi-command';reset.className='text-button';reset.textContent='Вернуть стандартную строку';$('#android-dpi-profile').append(reset);
   const diagnostics = document.createElement('details');
   diagnostics.className = 'advanced diagnostics-settings';
   const summary = document.createElement('summary'); summary.textContent = 'Диагностика и ошибки'; diagnostics.append(summary);
@@ -408,6 +481,11 @@ function configureAndroidSettings() {
   $('#vless-test-results').closest('section').classList.add('hidden');
   document.querySelector('.vless-connection-panel').append($('#vless-test-results'));
   $('#vless-test-results').textContent = '';
+  const troubleshooting=document.createElement('details');troubleshooting.id='vpn-troubleshooting';troubleshooting.className='advanced';
+  const troubleSummary=document.createElement('summary');troubleSummary.textContent='Если VPN не подключается';troubleshooting.append(troubleSummary,$('#test-vless'),$('#auto-server'),$('#vless-test-results'));document.querySelector('.vless-connection-panel').append(troubleshooting);
+  for(const [mode,selector] of [['dpi','#start-saved-dpi'],['telegram','#telegram-connect']]) {
+    const help=document.createElement('button');help.className='text-button mode-help';help.dataset.helpMode=mode;help.textContent='Не работает?';$(selector).parentElement.append(help);
+  }
 }
 
 function renderEditor(kind) {
@@ -462,6 +540,7 @@ function renderDpiReport(report) {
 // A cancelled DPI operation cannot overwrite a newer stop result.
 async function perform(kind, message, action, onSuccess) {
   if (pending) return;
+  if(['dpi','vless','telegram'].includes(kind))lastActionMode=kind;
   const version = ++revision;
   pending = { kind, message };
   showError(''); renderControls();
@@ -501,7 +580,7 @@ async function stopDpi(everything) {
   let stopped = false;
   await perform('stop', 'Останавливаю компоненты…', async () => {
     const result = await window.localRoute[everything ? 'stopAll' : 'stopEngine']();
-    return result.ok === false ? result : {state:result,message:everything ? 'DPI, VLESS и Telegram-прокси остановлены.' : 'DPI остановлен, подбор отменён.'};
+    return result.ok === false ? result : {state:result,message:everything ? 'Компоненты остановлены.' : 'DPI выключен.'};
   }, () => { stopped = true; });
   if (stopped) $('#test-results').innerHTML = '<div class="test-result">DPI остановлен. Можно запустить новую проверку.</div>';
 }
@@ -523,6 +602,43 @@ function addDomain(kind) {
 }
 async function handleAction(button) {
   const id = button.id;
+  if(/vless|subscription|server/.test(id))lastActionMode='vless';else if(/telegram/.test(id))lastActionMode='telegram';else if(/dpi/.test(id))lastActionMode='dpi';
+  if(button.dataset.helpMode)lastActionMode=button.dataset.helpMode;
+  if(button.dataset.modeSettings){await navigate(button.dataset.modeSettings);await navigate('settings');return;}
+  if(button.dataset.helpMode){showModeHelp(button.dataset.helpMode);return;}
+  if(button.dataset.helpAction) {
+    const dialog=$('#mode-help-dialog'),mode=dialog.dataset.mode,action=button.dataset.helpAction;dialog.close();
+    if(action==='close')return;
+    if(action==='report')return perform('export','Копирую отчёт…',()=>window.localRoute.exportDiagnostics());
+    if(action==='add') {await navigate('routes');$('#subscription-dialog').showModal();$('#subscription-input').focus();return;}
+    if(action==='settings') {await navigate(mode==='vless'?'routes':mode==='telegram'?'telegram':'lab');if(mode!=='vless')await navigate('settings');return;}
+    if(action==='telegram')return perform('telegram',state.telegramActive?'Открываю Telegram…':'Включаю прокси…',()=>state.telegramActive?window.localRoute.connectTelegram():window.localRoute.startTelegram());
+    if(action==='restart') {
+      if(pending){toast('Дождитесь завершения текущего действия.');return;}
+      if(dirty(mode==='vless'?'vless':'dpi')){toast('Сначала сохраните или сбросьте изменения в настройках.');return;}
+      return perform('restart','Перезапускаю…',()=>window.localRoute[mode==='dpi'?'restartDpi':'restartVless']());
+    }
+    if(action==='reset')return resetDpiDefaults();
+  }
+  if(id==='stop-for-dpi-edit')return stopDpi(false);
+  if(id==='reset-dpi-command')return resetDpiDefaults();
+  if(id==='configure-openflux' || (id==='toggle-openflux'&&!state.openFlux.configured)) {
+    let dialog=$('#openflux-dialog');
+    if(!dialog) {
+      dialog=document.createElement('dialog');dialog.id='openflux-dialog';
+      dialog.innerHTML='<h2>Подключение OpenFlux</h2><p>Вставьте openflux:// от настроенного выходного узла. Без него выхода в интернет не будет. Это экспериментальная версия: работа в вашей сети пока не проверена.</p><label for="openflux-input">Ссылка подключения</label><textarea id="openflux-input" rows="3" autocomplete="off" spellcheck="false" placeholder="openflux://v1/…"></textarea><p class="muted">Ключ хранится только на телефоне. Никому его не пересылайте.</p><div class="card-actions"><button class="button primary" id="save-openflux">Сохранить</button><button class="text-button" id="cancel-openflux">Закрыть</button></div>';
+      document.body.append(dialog);
+      dialog.addEventListener('close',()=>{$('#openflux-input').value='';});
+    }
+    dialog.showModal();$('#openflux-input').focus();return;
+  }
+  if(id==='cancel-openflux') {$('#openflux-dialog').close();return;}
+  if(id==='save-openflux') return perform('save','Проверяю ссылку OpenFlux…',()=>window.localRoute.saveOpenFlux($('#openflux-input').value),()=>$('#openflux-dialog').close());
+  if(id==='toggle-openflux') {
+    const active=['starting','connecting','connected'].includes(state.openFlux.phase);
+    if(!active && (state.active||state.vlessActive) && !await confirmAction('Для эксперимента OpenFlux остановим DPI и VPN. Продолжить?','Включить OpenFlux')) return;
+    return perform('openflux',active?'Останавливаю OpenFlux…':'Запускаю OpenFlux…',()=>active?window.localRoute.stopOpenFlux():window.localRoute.startOpenFlux());
+  }
   if(id==='open-guide'){showGuide();return;}
   if(id==='cancel-operation')return stopDpi(true);
   if(id==='back-settings'){navigate(settingsReturnPage);return;}
@@ -534,7 +650,12 @@ async function handleAction(button) {
   }
   if(button.dataset.androidTile) return perform('tile','Добавляю плитку…',()=>window.localRoute.addTile(button.dataset.androidTile));
   if(id==='save-dpi-command') return perform('save','Сохраняю профиль DPI…',()=>window.localRoute.saveDpiCommand($('#dpi-command').value));
-  if(id==='reject-dpi') return perform('dpi','Останавливаю неработающий вариант и запускаю следующий…',()=>window.localRoute.rejectDpi(),result=>{$('#test-results').textContent=result.message || '';});
+  if(id==='reject-dpi') {
+    if(isAndroid()&&!state.dpiTrial?.hasNext) {
+      await stopDpi(false);await navigate('settings');document.querySelector('[data-mode-settings="lab"]').open=true;$('#android-dpi-profile').open=true;return;
+    }
+    return perform('dpi','Проверяю другой профиль…',()=>window.localRoute.rejectDpi(),result=>{$('#test-results').textContent=result.message || '';});
+  }
   if(id==='confirm-dpi') return perform('save','Сохраняю подтверждение…',()=>window.localRoute.confirmDpi());
   if (button.dataset.page) { navigate(button.dataset.page); if (button.dataset.openLog) { const group = document.querySelector('.diagnostics-settings'); if (group) group.open = true; $('#technical-log').open=true; $('#technical-log').scrollIntoView({block:'start',behavior:'instant'}); } return; }
   if (!state) return;
@@ -565,7 +686,7 @@ async function handleAction(button) {
     if (!vlessDraft.apps.some((name) => name.toLowerCase() === value.toLowerCase())) vlessDraft.apps.push(value);
     input.value = ''; $('#app-search').value = ''; renderApps(); renderControls(); return;
   }
-  if (id === 'save-dpi') return perform('save', 'Сохраняю сервисы DPI…', async () => {const result=await window.localRoute.saveProfile(clone(dpiDraft)); return result.ok===false ? result : {state:result,message:'Сервисы сохранены. Подберите стратегию для нового профиля.'};}, () => { resetDraft('dpi'); renderEditor('dpi'); });
+  if (id === 'save-dpi') return perform('save', 'Сохраняю сервисы DPI…', async () => {const payload=clone(dpiDraft);if(isAndroid())payload.command=$('#dpi-command').value;const result=await window.localRoute.saveProfile(payload); return result.ok===false ? result : {state:result,message:'Настройки DPI сохранены.'};}, () => { resetDraft('dpi'); renderEditor('dpi'); });
   if (id === 'save-vless') return perform('vless', 'Проверяю и сохраняю профиль…', () => window.localRoute.saveVless(clone(vlessDraft)), () => { resetDraft('vless'); renderEditor('vless'); $('#vless-test-results').innerHTML = '<p class="setting-description">Профиль сохранён. Проверьте сервер и выбранные сайты.</p>'; });
   if (id === 'toggle-vless' || id === 'start-vless') return state.vlessActive ? stopSeparate('vless') : perform('vless', 'Подключаю VPN…', () => window.localRoute.startVless());
   if (id === 'test-vless') return perform('vless', 'Проверяю сервер и выбранные сайты через VLESS…', () => window.localRoute.testVless());

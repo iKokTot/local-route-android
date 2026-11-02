@@ -4,6 +4,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DiagnosticBufferTest {
+    @Test fun openFluxLinksNeverReachDiagnostics() {
+        assertFalse(DiagnosticRedactor.clean("connect openflux://v1/PRIVATE_PROFILE").contains("PRIVATE_PROFILE"))
+    }
     @Test fun captureIncludesSuccessfulAndIdleConnectionsAndExpires() {
         var time=100L
         val context=FailureLogContext { time }

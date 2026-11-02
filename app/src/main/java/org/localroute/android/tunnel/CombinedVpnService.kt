@@ -65,6 +65,7 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
     private var plan = CombinedRouting()
     private var commandServer: CommandServer? = null
     private var tun: ParcelFileDescriptor? = null
+    private var standaloneConfig: File? = null
     private var defaultInterfaceListener: InterfaceUpdateListener? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val connectivityManager by lazy { getSystemService(ConnectivityManager::class.java) }
@@ -144,7 +145,7 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
                 intent.getStringExtra(LocalDpiVpnService.EXTRA_STRATEGY_TITLE) ?: "DPI", "", args.toList())
             else strategy ?: AndroidStrategies.resolve(profile.lastSuccessfulStrategy(), profile.customCommand()) ?: AndroidStrategies.all.first()
         } else null
-        setupBox()
+        if(next.serverEnabled) setupBox()
         val networks = connectivityManager.allNetworks.filter { network ->
             connectivityManager.getNetworkCapabilities(network)?.let {
                 it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) && it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -156,10 +157,10 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
         val dns = PhysicalDns.choose(physical?.let { connectivityManager.getLinkProperties(it)?.dnsServers?.mapNotNull { address -> address.hostAddress } }.orEmpty())
         val password = if (next.serverEnabled) VlessGateway.password ?: VlessGateway.prepare() else null
         if (org.localroute.android.BuildConfig.DEBUG && intent?.hasExtra("test_package") == true) testPackage = intent.getStringExtra("test_package")
-        val config = CombinedConfigCompiler.compile(next, endpoint, dns, password, testPackage?.let { setOf(it) }.orEmpty())
+        val config = (if(next.serverEnabled) CombinedConfigCompiler.compile(next, endpoint, dns, password, testPackage?.let { setOf(it) }.orEmpty()) else "")
             .let { if (org.localroute.android.BuildConfig.DEBUG) it.replace("\"level\":\"info\"", "\"level\":\"debug\"") else it }
-        Libbox.checkConfig(config)
-        VpnDiagnostics.add("Маршрут: DPI=${next.dpiEnabled}, VLESS=${next.serverEnabled}; Android ${Build.VERSION.SDK_INT}; DNS=$dns; исключений=${org.localroute.android.data.VpnExclusions(this).packages().size}")
+        if(next.serverEnabled) Libbox.checkConfig(config)
+        VpnDiagnostics.add("Маршрут: DPI=${next.dpiEnabled}, VLESS=${next.serverEnabled}; Android ${Build.VERSION.SDK_INT}; DNS=${if(next.serverEnabled) dns else "1.1.1.1"}; исключений=${if(next.serverEnabled) org.localroute.android.data.VpnExclusions(this).packages().size else 0}")
         if (next.dpiEnabled && (proxyJob == null || strategy != requestedStrategy)) {
             stopProxy()
             LocalDpiRuntime.update(EnginePhase.STARTING, "Запуск локального DPI…", requestedStrategy?.id)
@@ -200,13 +201,19 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
             strategy = requestedStrategy
         }
         if (next.serverEnabled && !plan.serverEnabled) VlessRuntime.update(TunnelState.Connecting, "Применение серверного маршрута…")
-        val server = commandServer ?: CommandServer(this, this).also { commandServer = it; it.start() }
         openingServerEnabled = next.serverEnabled
-        server.startOrReloadService(config, OverrideOptions().apply { autoRedirect = false })
-        runCatching {
+        if(next.serverEnabled) {
+            stopStandaloneDpi()
+            val server = commandServer ?: CommandServer(this, this).also { commandServer = it; it.start() }
+            server.startOrReloadService(config, OverrideOptions().apply { autoRedirect = false })
+            runCatching {
             diagnosticClient?.disconnect()
             diagnosticClient = io.nekohasekai.libbox.CommandClient(VpnDiagnostics.handler(), io.nekohasekai.libbox.CommandClientOptions().apply { addCommand(Libbox.CommandLog) }).also { it.connect() }
-        }.onFailure { VpnDiagnostics.add("Не удалось подключить журнал движка: ${it.message}") }
+            }.onFailure { VpnDiagnostics.add("Не удалось подключить журнал движка: ${it.message}") }
+        } else {
+            closeBoxTransport()
+            startStandaloneDpi()
+        }
         if (!next.dpiEnabled) stopProxy()
         if (!next.serverEnabled) VlessGateway.close()
         plan = next
@@ -229,6 +236,34 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
         })
         libboxReady = true
     }
+    /** Proven ByeDPIAndroid path: no domain sniffing, IPv6 or ISP DNS interception. */
+    private fun startStandaloneDpi() {
+        stopStandaloneDpi()
+        val file=File.createTempFile("dpi-hev-", ".yaml",cacheDir)
+        standaloneConfig=file
+        file.writeText("misc:\n  task-stack-size: 81920\nsocks5:\n  mtu: 8500\n  address: 127.0.0.1\n  port: 1080\n  udp: udp\n")
+        val builder=Builder().setSession("Local Route · ByeDPI").setMtu(1500)
+            .addAddress("10.10.10.10",32).addRoute("0.0.0.0",0).addDnsServer("1.1.1.1")
+            .setConfigureIntent(PendingIntent.getActivity(this,70,Intent(this,org.localroute.android.MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE))
+        if(Build.VERSION.SDK_INT>=29) builder.setMetered(false)
+        addDisallowed(builder,packageName)
+        tun=builder.establish() ?: error("Android не создал DPI-интерфейс")
+        NativeTunBridge.start(this,file.absolutePath,requireNotNull(tun).fd)
+        CombinedRuntime.networkAvailable(null)
+        VpnDiagnostics.add("DPI: прямой ByeDPI/tun2socks, IPv4, DNS через DPI; сервер не используется")
+    }
+    private fun stopStandaloneDpi() {
+        if(standaloneConfig==null) return
+        NativeTunBridge.stop(this)
+        runCatching { tun?.close() };tun=null
+        standaloneConfig?.delete();standaloneConfig=null
+    }
+    private fun closeBoxTransport() {
+        diagnosticClient?.disconnect();diagnosticClient=null
+        commandServer?.closeService();commandServer?.close();commandServer=null
+        defaultInterfaceListener?.let(::closeDefaultInterfaceMonitor)
+        if(standaloneConfig==null) { tun?.close();tun=null }
+    }
     private suspend fun stopProxy() {
         proxyGeneration++
         withContext(Dispatchers.IO) {
@@ -240,6 +275,7 @@ class CombinedVpnService : VpnService(), PlatformInterface, CommandServerHandler
     }
     private suspend fun shutdown() {
         shuttingDown = true
+        stopStandaloneDpi()
         runCatching { diagnosticClient?.disconnect() }; diagnosticClient = null
         runCatching { tun?.close() }; tun = null
         runCatching { commandServer?.closeService() }

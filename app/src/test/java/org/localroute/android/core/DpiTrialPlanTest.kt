@@ -4,14 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DpiTrialPlanTest {
+    @Test fun oneProvenDefaultAndExplicitCustomAreTheOnlyChoices() {
+        assertEquals(1,AndroidStrategies.all.size)
+        val choices=AndroidStrategies.candidates("custom-command","--tlsrec 1+s")
+        assertEquals(2,choices.size)
+        assertEquals("custom-command",choices.first().id)
+        assertNull(AndroidStrategies.resolve("byedpi-tls-disorder"))
+    }
     @Test fun customCommandDoesNotDuplicateABuiltInCandidate() {
         val candidates=AndroidStrategies.candidates(null,AndroidStrategies.BYEDPI_ANDROID_TCP_UDP_COMMAND)
         assertEquals(AndroidStrategies.all.size,candidates.size)
         assertEquals(candidates.size,candidates.map { it.nativeArguments }.toSet().size)
-        assertEquals("custom-command",candidates.first().id)
+        assertEquals("byedpi-android-tcp-udp",candidates.first().id)
     }
     @Test fun rejectionAdvancesToADifferentCandidateAndNeverWrapsSilently() {
-        val ids=AndroidStrategies.all.map { it.id }
+        val ids=listOf("baseline","custom")
         assertTrue(ids.size>1)
         var plan=DpiTrialPlan();val seen=mutableSetOf<String>()
         repeat(ids.size) { plan=plan.next(ids);assertTrue(seen.add(requireNotNull(plan.candidate))) }

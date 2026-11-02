@@ -26,31 +26,28 @@ object AndroidStrategies {
         "-Kt,h -d1 -s0+s -d3+s -s6+s -d9+s -s12+s -d15+s -s20+s -d25+s -s30+s " +
             "-d35+s -An -Ku -a5 -s443+s -d80+s -d443+s -s80+s -s443+s -d53+s -s53+s -d443+s"
 
-    // Это кандидаты для проверки в своей сети, а не заранее подтверждённые стратегии.
-    // Дополнительные варианты используют методы из README закреплённого ByeDPI.
+    // One reference profile; connectivity must still be checked in the owner's network.
     val all = listOf(
         DpiStrategy(
             "byedpi-android-tcp-udp",
             "ByeDPIAndroid · TCP + UDP",
             "Многошаговый Android-профиль из ByeDPIAndroid: отдельные цепочки для TLS/HTTP и UDP/QUIC.",
             commandArguments(BYEDPI_ANDROID_TCP_UDP_COMMAND)
-        ),
-        DpiStrategy("byedpi-tls-record", "TLS · разделение записи", "Проверьте видео и голос после запуска.", commandArguments("--tlsrec 1+s")),
-        DpiStrategy("byedpi-tls-split", "TLS · разделение пакета", "Проверьте видео и голос после запуска.", commandArguments("--split 1 --tlsrec 1+s")),
-        DpiStrategy("byedpi-tls-disorder", "TLS · обратный порядок", "Вариант из примера README ByeDPI; требует проверки в вашей сети.", commandArguments("--disorder 1 --auto=torst --tlsrec 1+s"))
+        )
     )
 
     fun ordered(lastSuccessfulId: String?): List<DpiStrategy> =
         all.sortedBy { if (it.id == lastSuccessfulId) 0 else 1 }
 
-    fun candidates(lastSuccessfulId: String?, customCommand: String): List<DpiStrategy> =
-        (listOfNotNull(custom(customCommand)) + ordered(lastSuccessfulId))
-            // Одинаковые команды не должны повторяться под разными названиями.
-            .distinctBy { it.nativeArguments }
+    fun candidates(lastSuccessfulId: String?, customCommand: String): List<DpiStrategy> {
+        val explicit=custom(customCommand)?.takeUnless { candidate -> all.any { it.nativeArguments==candidate.nativeArguments } }
+        return (listOfNotNull(explicit)+all).sortedBy { if(it.id==lastSuccessfulId) 0 else 1 }
+    }
 
     fun custom(command: String): DpiStrategy? {
+        if(command.length>4096) return null
         val args = commandArguments(command)
-        if (args.isEmpty()) return null
+        if (args.isEmpty() || args.size>256) return null
         // LOCAL_DPI must remain a loopback-only proxy controlled by the app.
         // Do not allow a pasted profile to replace the listener or redirect to
         // another proxy/server.

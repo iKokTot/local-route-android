@@ -44,6 +44,15 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var sharedHost: SharedRouteHost
     private var pendingVpnRequest = false
+    private val openFluxConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if(result.resultCode==RESULT_OK) startOpenFluxService()
+        else org.localroute.android.openflux.OpenFluxRuntime.update("stopped","Разрешение Android VPN не выдано")
+    }
+    private fun startOpenFluxService() = ContextCompat.startForegroundService(this,Intent(this,org.localroute.android.openflux.OpenFluxVpnService::class.java).setAction(org.localroute.android.openflux.OpenFluxVpnService.START))
+    private fun requestOpenFlux() {
+        val consent=VpnService.prepare(this)
+        if(consent==null) startOpenFluxService() else openFluxConsent.launch(consent)
+    }
     private var strategyToStart: DpiStrategy? = null
     private var vlessStartRequested = false
     private lateinit var vlessStore: VlessStore
@@ -72,7 +81,7 @@ class MainActivity : ComponentActivity() {
             { cancelPendingVpn(); startService(Intent(this, CombinedVpnService::class.java).setAction(CombinedVpnService.STOP_SERVER)) },
             ::requestTelegramProxy,
             { startService(Intent(this, TelegramProxyService::class.java).setAction(TelegramProxyService.STOP)) },
-            ::requestQuickTile)
+            ::requestQuickTile, ::requestOpenFlux)
         val sharedContainer = android.widget.FrameLayout(this).apply {
             setBackgroundColor(android.graphics.Color.rgb(17,20,24))
             addView(sharedHost.webView,android.widget.FrameLayout.LayoutParams(-1,-1))

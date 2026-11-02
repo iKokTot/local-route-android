@@ -3,6 +3,7 @@
  * GPL-3.0-or-later; see assets/licenses/NOTICE.md.
  */
 #include <jni.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -12,6 +13,14 @@
 #include "byedpi/proxy.h"
 #include "main.h"
 #include "utils.h"
+
+/* argv is borrowed by the parser until the worker exits, never until stop is requested. */
+static char **worker_argv = NULL;
+static int worker_argc = 0;
+static void free_worker_argv(void) {
+    for (int i=0;i<worker_argc;i++) free(worker_argv[i]);
+    free(worker_argv); worker_argv=NULL; worker_argc=0;
+}
 
 JNIEXPORT jint JNI_OnLoad(
         __attribute__((unused)) JavaVM *vm,
@@ -48,10 +57,12 @@ Java_io_github_dovecoteescapee_byedpi_core_ByeDpiProxy_jniCreateSocketWithComman
      * deliberately keeps this argv storage alive as well; freeing it caused
      * accepted SOCKS connections to close before sending a SOCKS response.
      */
+    worker_argv=argv; worker_argc=argc;
     int parsed = parse_args(argc, argv);
     if (parsed < 0) {
         uniperror("parse_args");
         reset_params();
+        free_worker_argv();
         return -1;
     }
 
@@ -59,6 +70,7 @@ Java_io_github_dovecoteescapee_byedpi_core_ByeDpiProxy_jniCreateSocketWithComman
     if (fd < 0) {
         uniperror("listen_socket");
         reset_params();
+        free_worker_argv();
     }
     return fd;
 }
@@ -69,11 +81,14 @@ Java_io_github_dovecoteescapee_byedpi_core_ByeDpiProxy_jniStartProxy(
         __attribute__((unused)) jobject thiz,
         jint fd) {
     NOT_EXIT = 1;
-    if (event_loop(fd) < 0) {
+    int code=event_loop(fd);
+    int result=code<0 ? get_e() : 0;
+    if (code < 0) {
         uniperror("event_loop");
-        return get_e();
     }
-    return 0;
+    reset_params();
+    free_worker_argv();
+    return result;
 }
 
 JNIEXPORT jint JNICALL
@@ -82,6 +97,7 @@ Java_io_github_dovecoteescapee_byedpi_core_ByeDpiProxy_jniStopProxy(
         __attribute__((unused)) jobject thiz,
         jint fd) {
     int result = fd >= 0 ? shutdown(fd, SHUT_RDWR) : 0;
-    reset_params();
+    if(result<0 && errno==EBADF) result=0;
+    /* Worker may still read params/argv. It releases them after event_loop returns. */
     return result;
 }

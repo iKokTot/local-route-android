@@ -19,11 +19,13 @@ android {
     defaultConfig {
         applicationId = providers.gradleProperty("applicationId").getOrElse("org.localroute.community")
         manifestPlaceholders["applicationLabel"] = providers.gradleProperty("applicationLabel").getOrElse("Local Route")
-        minSdk = 26; targetSdk = 35; versionCode = 36; versionName = "0.24.12"
+        minSdk = 26; targetSdk = 35; versionCode = 39; versionName = "0.24.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
     sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/tgwsJniLibs"))
+    sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/openfluxJniLibs"))
+    sourceSets.getByName("androidTest").jniLibs.srcDir(layout.buildDirectory.dir("generated/openfluxTestJniLibs"))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -31,7 +33,10 @@ android {
     }
     buildFeatures { compose = true; buildConfig = true }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
-    packaging { resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") }
+    packaging {
+        jniLibs.useLegacyPackaging = true
+        resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE.md", "META-INF/LICENSE-notice.md")
+    }
 
     signingConfigs {
         create("release") {
@@ -102,6 +107,17 @@ val prepareHevSources = tasks.register("prepareHevSources") {
         }
     }
 }
+
+val checkOpenFlux = tasks.register("checkOpenFlux") {
+    doLast {
+        listOf("arm64-v8a","armeabi-v7a","x86_64").forEach { abi ->
+            check(layout.buildDirectory.file("generated/openfluxJniLibs/$abi/libopenflux.so").get().asFile.isFile) {
+                "Build pinned OpenFlux helpers first; see docs/OPENFLUX.md ($abi missing)"
+            }
+        }
+    }
+}
+tasks.named("preBuild").configure { dependsOn(checkOpenFlux) }
 
 tasks.register<Exec>("buildHevSocks5Tunnel") {
     group = "build"

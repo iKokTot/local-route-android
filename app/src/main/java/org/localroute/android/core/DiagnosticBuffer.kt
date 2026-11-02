@@ -4,7 +4,7 @@ package org.localroute.android.core
 object DiagnosticRedactor {
     fun clean(value: String): String = value
         .replace(Regex("\\u001B\\[[0-?]*[ -/]*[@-~]"), "")
-        .replace(Regex("(?i)\\b(?:vless|vmess|trojan|ss|socks5?|tg|https?|hysteria2?|tuic)://[^\\s<>\"']+"), "[ссылка скрыта]")
+        .replace(Regex("(?i)\\b(?:openflux|vless|vmess|trojan|ss|socks5?|tg|https?|hysteria2?|tuic)://[^\\s<>\"']+"), "[ссылка скрыта]")
         .replace(Regex("(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"), "[ключ скрыт]")
         .replace(Regex("(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+"), "$1[ключ скрыт]")
         .replace(Regex("(?i)([\"']?(?:password|passwd|secret|token|authorization|uuid|pbk|sid|private_key|public_key|short_id)[\"']?\\s*[:=]\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,;&}]+)"), "$1[ключ скрыт]")

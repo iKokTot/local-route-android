@@ -21,7 +21,8 @@ data class CombinedRouting(
     }
 
     fun destinationForPackage(packageName: String): TrafficDestination =
-        if (serverEnabled && packageName in serverRoutes.packages) TrafficDestination.SERVER else defaultDestination
+        if (dpiEnabled && services.any { it.packageName==packageName }) TrafficDestination.LOCAL_DPI
+        else if (serverEnabled && packageName in serverRoutes.packages) TrafficDestination.SERVER else defaultDestination
 
     fun destinationForDomain(domain: String): TrafficDestination {
         val host = domain.trimEnd('.').lowercase(java.util.Locale.ROOT)

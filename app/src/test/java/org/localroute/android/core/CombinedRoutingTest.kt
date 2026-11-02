@@ -26,7 +26,7 @@ class CombinedRoutingTest {
     @Test fun selectionAffectsOnlyChosenServicesIncludingNativePackages() {
         val state = CombinedRouting(true, true, setOf(ServiceTarget.DISCORD), serverRoutes = ServerRoutes(allTraffic = false))
         assertEquals(TrafficDestination.DIRECT, state.destinationForDomain("youtube.com"))
-        assertEquals(TrafficDestination.DIRECT, state.destinationForPackage("com.discord"))
+        assertEquals(TrafficDestination.LOCAL_DPI, state.destinationForPackage("com.discord"))
         assertEquals(TrafficDestination.DIRECT, state.destinationForPackage("com.google.android.youtube"))
     }
     @Test fun localRouteHasNoAutomaticServerFallback() {
