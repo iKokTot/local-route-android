@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DpiTrialPlanTest {
+    @Test fun embeddedEngineRejectsCliExitAndListenerModes() {
+        listOf("--help","--version","-h","-v","--transparent","-E","-p1444","--ip=0.0.0.0","--daemon").forEach {
+            assertNull(it,AndroidStrategies.custom(it))
+        }
+        assertNotNull(AndroidStrategies.custom("--tlsrec 1+s"))
+        assertNotNull(AndroidStrategies.custom(AndroidStrategies.BYEDPI_ANDROID_TCP_UDP_COMMAND))
+    }
     @Test fun oneProvenDefaultAndExplicitCustomAreTheOnlyChoices() {
         assertEquals(1,AndroidStrategies.all.size)
         val choices=AndroidStrategies.candidates("custom-command","--tlsrec 1+s")

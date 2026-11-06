@@ -26,8 +26,16 @@ def audit(package):
     identity = f'{name}-{version}'
     cache = CACHE / f'{identity}.crate'
     if not cache.exists():
-        with urllib.request.urlopen(f'https://static.crates.io/crates/{name}/{identity}.crate', timeout=60) as response:
-            cache.write_bytes(response.read())
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(f'https://static.crates.io/crates/{name}/{identity}.crate', timeout=30) as response:
+                    archive = response.read()
+                assert hashlib.sha256(archive).hexdigest() == package['checksum'], identity
+                cache.write_bytes(archive)
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
     archive = cache.read_bytes()
     assert hashlib.sha256(archive).hexdigest() == package['checksum'], identity
     with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tar:
@@ -43,9 +51,10 @@ def audit(package):
         return identity, license_name, bool(texts)
 
 
-with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
     results = sorted(pool.map(audit, packages))
-(OUTPUT / 'DEPENDENCIES.md').write_text('# TGWs Rust dependency notices\n\nPinned tg-ws-proxy-rs 2.5.4 Cargo.lock; conservative superset including host/dev crates.\n\n' + '\n'.join(f'* {name}: {license_name}' for name, license_name, _ in results) + '\n', encoding='utf-8')
+version = tomllib.loads((SOURCE / 'Cargo.toml').read_text())['package']['version']
+(OUTPUT / 'DEPENDENCIES.md').write_text(f'# TGWs Rust dependency notices\n\nPinned tg-ws-proxy-rs {version} Cargo.lock; conservative superset including host/dev crates.\n\n' + '\n'.join(f'* {name}: {license_name}' for name, license_name, _ in results) + '\n', encoding='utf-8')
 (OUTPUT / 'tg-ws-proxy-rs-MIT.txt').write_bytes((SOURCE / 'LICENSE').read_bytes())
 print(f'Verified {len(results)} crate checksums and generated license notices.')
 print('License expressions:', sorted(set(license_name for _, license_name, _ in results)))

@@ -261,8 +261,30 @@ function renderControls() {
   }
   all('[data-page-panel]').forEach((panel) => panel.setAttribute('aria-busy', String(busy)));
 }
+let updateRequestPending=false;
+function renderUpdates() {
+  if(!isAndroid() || !$('#update-card'))return;
+  const info=state.updates || {};
+  $('#update-card').classList.toggle('hidden',!info.showCard);
+  $('#update-title').textContent=`Доступна версия ${info.version || ''}`;
+  $('#update-notes').textContent=info.notes || 'Подробности — на странице выпуска.';
+  $('#update-status').textContent=updateRequestPending || info.checking ? 'Проверяем…' : info.message || (info.available?`Доступна версия ${info.version}.`:info.checkedAt?`Последняя проверка: ${new Date(info.checkedAt).toLocaleString('ru-RU')}`:'Установлена версия '+state.appVersion+'.');
+  $('#check-updates').disabled=updateRequestPending || Boolean(info.checking);
+  $('#settings-download-update').classList.toggle('hidden',!info.available);
+}
+async function checkAndroidUpdates(force) {
+  if(updateRequestPending)return;
+  updateRequestPending=true;renderUpdates();
+  try {
+    const result=await window.localRoute.checkUpdates(force);
+    if(result.state?.updates)state.updates=result.state.updates;
+  } catch (_) {
+    state.updates={...state.updates,message:'Не удалось проверить обновления. Попробуйте позже.'};
+  } finally {updateRequestPending=false;renderUpdates();}
+}
 function renderState() {
   if (!state) return;
+  renderUpdates();
   if(isAndroid() && state.openFlux) {
     let card=$('#openflux-card');
     if(!card) {
@@ -411,6 +433,12 @@ function configurePlatform() {
 
 function configureAndroidSettings() {
   const settings = document.querySelector('[data-page-panel="settings"]');
+  const updateSettings=document.createElement('section');updateSettings.className='panel';updateSettings.id='update-settings';
+  updateSettings.innerHTML='<h2>Обновления</h2><p class="setting-description">Проверяем GitHub при открытии, не чаще раза в сутки.</p><p id="update-status" role="status"></p><div class="update-actions"><button class="button outlined" id="check-updates">Проверить обновления</button><button class="text-button hidden" id="settings-download-update">Скачать обновление ↗</button></div>';
+  settings.insertBefore(updateSettings,settings.querySelector('.project-links'));
+  const updateCard=document.createElement('section');updateCard.id='update-card';updateCard.className='panel hidden';updateCard.setAttribute('aria-label','Доступно обновление');
+  updateCard.innerHTML='<h2 id="update-title"></h2><p>Обновление доступно на GitHub. Подключения сохранятся при установке поверх этой версии.</p><details><summary>Что нового</summary><p id="update-notes"></p></details><div class="update-actions"><button class="button tonal" id="download-update">Скачать ↗</button><button class="text-button" id="snooze-update">Позже</button><button class="text-button" id="skip-update">Пропустить версию</button></div>';
+  document.querySelector('[data-page-panel="control"]').prepend(updateCard);
   const quick = $('#general-platform-settings');
   quick.querySelector('p').textContent = 'Добавьте нужную кнопку в шторку Android.';
   quick.closest('section').querySelector('h2').textContent = 'Быстрый запуск';
@@ -602,6 +630,9 @@ function addDomain(kind) {
 }
 async function handleAction(button) {
   const id = button.id;
+  if(isAndroid() && id==='check-updates') {await checkAndroidUpdates(true);return;}
+  if(isAndroid() && ['download-update','settings-download-update'].includes(id)) {const result=await window.localRoute.openUpdate();if(result.message)toast(result.message);return;}
+  if(isAndroid() && ['snooze-update','skip-update'].includes(id)) {const result=await window.localRoute.dismissUpdate(id==='skip-update');state.updates=result.state.updates;renderUpdates();return;}
   if(/vless|subscription|server/.test(id))lastActionMode='vless';else if(/telegram/.test(id))lastActionMode='telegram';else if(/dpi/.test(id))lastActionMode='dpi';
   if(button.dataset.helpMode)lastActionMode=button.dataset.helpMode;
   if(button.dataset.modeSettings){await navigate(button.dataset.modeSettings);await navigate('settings');return;}
@@ -772,6 +803,7 @@ async function initialize() {
     for (const kind of ['dpi', 'vless', 'telegram']) renderEditor(kind);
     renderState();
     if(isAndroid() && !state.guideCompleted) showGuide();
+    if(isAndroid()) checkAndroidUpdates(false);
   } catch (error) { showError(`Не удалось загрузить состояние приложения: ${error.message}. Перезапустите Local Route.`); }
 }
 window.localRoute.onProgress?.((operation) => {
@@ -780,7 +812,7 @@ window.localRoute.onProgress?.((operation) => {
   renderControls();
   if (!operation && !pending) refreshState();
 });
-window.addEventListener('focus', () => { if (state) refreshState(); });
+window.addEventListener('focus', () => { if (state) {refreshState();if(isAndroid())checkAndroidUpdates(false);} });
 // Local process status only. Editors are never rebuilt by a background refresh.
 setInterval(() => { if (state && !document.hidden) refreshState(); }, 15000);
 initialize();

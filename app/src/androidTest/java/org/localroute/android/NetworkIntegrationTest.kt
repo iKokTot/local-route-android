@@ -432,8 +432,22 @@ class NetworkIntegrationTest {
         }
     }
 
+    @Test fun telegramMediaCfPathReturnsRealProtocolResponse() {
+        foreground()
+        val settings=TelegramProxySettings(context)
+        try {
+            assertNull(NativeProxy.nativeStart(settings.arguments()+" --pinned-upstream cfproxy"))
+            await(60000) {TelegramProxyRuntime.state.value.phase in setOf(TelegramProxyPhase.LISTENING,TelegramProxyPhase.ERROR)}
+            assertEquals(TelegramProxyPhase.LISTENING,TelegramProxyRuntime.state.value.phase)
+            TelegramMtprotoProbe.check(settings.secret(),dc=-2,timeout=45000)
+            assertTrue(NativeProxy.nativeIsRunning())
+        } finally { NativeProxy.nativeStop();Thread.sleep(1000) }
+    }
     @Test fun localDpiStillStartsAndPassesHttps() {
         foreground()
+        fun https(site: Int, vpn: Boolean)=context.contentResolver.query(Uri.parse("content://org.localroute.networkprobe/check?httpscheck=1&site=$site&waitvpn=${if(vpn)1 else 0}"),null,null,null,null)!!.use {check(it.moveToFirst());it.getString(0)}
+        val site=(0..2).firstOrNull {https(it,false).startsWith("HTTPS_OK:")}
+        org.junit.Assume.assumeTrue("External HTTPS endpoints unavailable even without VPN",site!=null)
         val strategy = org.localroute.android.core.AndroidStrategies.all.first()
         val service = CombinedVpnService::class.java
         try {
@@ -443,9 +457,11 @@ class NetworkIntegrationTest {
                 .putExtra(org.localroute.android.localdpi.LocalDpiVpnService.EXTRA_STRATEGY_TITLE, strategy.title)
                 .putExtra(org.localroute.android.localdpi.LocalDpiVpnService.EXTRA_STRATEGY_ARGUMENTS, strategy.nativeArguments.toTypedArray()))
             await { org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase == org.localroute.android.localdpi.EnginePhase.ACTIVE }
-            val result = probe(normal = true)
-            assertTrue("Direct HTTPS alongside local DPI failed: $result", result.contains("Example Domain"))
-            assertTrue(TelegramProxySettings(context).arguments().contains("socks5://127.0.0.1:1080"))
+            var result=""
+            for(attempt in 0..2) {result=https(requireNotNull(site),true);if(result.startsWith("HTTPS_OK:"))break;Thread.sleep(500)}
+            assertTrue("HTTPS through DPI failed while baseline endpoint worked: $result", result.startsWith("HTTPS_OK:"))
+            assertTrue(TelegramProxySettings(context).arguments().contains("--no-outbound-proxy"))
+            assertNull(TelegramProxySettings.outboundProxy())
             ContextCompat.startForegroundService(context, Intent(context, TelegramProxyService::class.java).setAction(TelegramProxyService.START))
             await(40000) { TelegramProxyRuntime.state.value.verified != null || TelegramProxyRuntime.state.value.phase == TelegramProxyPhase.ERROR }
             assertEquals(TelegramProxyRuntime.state.value.message, true, TelegramProxyRuntime.state.value.verified)
@@ -457,7 +473,7 @@ class NetworkIntegrationTest {
         }
     }
 
-    @Test fun telegramCanUseAuthenticatedVlessGateway() {
+    @Test fun telegramStaysDirectWhileVlessGatewayRequiresAuthentication() {
         foreground()
         val store = VlessStore(context)
         val previous = store.uri()
@@ -466,7 +482,8 @@ class NetworkIntegrationTest {
             org.localroute.android.shortcuts.ModeShortcuts.start(context, org.localroute.android.shortcuts.ShortcutMode.VLESS)
             await { VlessRuntime.state.value.state == TunnelState.Connected || VlessRuntime.state.value.state is TunnelState.Error }
             assertEquals(VlessRuntime.state.value.message, TunnelState.Connected, VlessRuntime.state.value.state)
-            assertTrue(TelegramProxySettings(context).arguments().contains("--outbound-proxy socks5://"))
+            assertTrue(TelegramProxySettings(context).arguments().contains("--no-outbound-proxy"))
+            assertNull(TelegramProxySettings.outboundProxy())
             java.net.Socket("127.0.0.1", VlessGateway.PORT).use { socket ->
                 socket.soTimeout = 2000
                 socket.getOutputStream().write(byteArrayOf(5, 1, 0))
@@ -476,6 +493,7 @@ class NetworkIntegrationTest {
             org.localroute.android.shortcuts.ModeShortcuts.start(context, org.localroute.android.shortcuts.ShortcutMode.TG)
             await(40000) { TelegramProxyRuntime.state.value.verified != null || TelegramProxyRuntime.state.value.phase == TelegramProxyPhase.ERROR }
             assertEquals(TelegramProxyRuntime.state.value.message, true, TelegramProxyRuntime.state.value.verified)
+            TelegramMtprotoProbe.check(TelegramProxySettings(context).secret())
             val gatewaySecret = VlessGateway.password!!
             assertFalse(TelegramProxyRuntime.state.value.logs.any { it.contains(gatewaySecret) })
         } finally {
@@ -507,13 +525,18 @@ class NetworkIntegrationTest {
             modes.start(context, org.localroute.android.shortcuts.ShortcutMode.TG)
             await(40000) { TelegramProxyRuntime.state.value.verified == true }
             modes.start(context, org.localroute.android.shortcuts.ShortcutMode.VLESS)
-            await(40000) { TelegramProxyRuntime.state.value.verified == true && TelegramProxyRuntime.state.value.message.contains("через VLESS") }
+            await(40000) { VlessRuntime.state.value.state==TunnelState.Connected }
+            assertEquals(TelegramProxyPhase.LISTENING, TelegramProxyRuntime.state.value.phase)
+            assertNull(TelegramProxySettings.outboundProxy())
+            TelegramMtprotoProbe.check(TelegramProxySettings(context).secret())
             assertEquals(TunnelState.Connected, VlessRuntime.state.value.state)
             modes.start(context, org.localroute.android.shortcuts.ShortcutMode.DPI)
             await { org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase == org.localroute.android.localdpi.EnginePhase.ACTIVE }
             assertEquals(TunnelState.Connected, VlessRuntime.state.value.state)
             modes.stop(context, org.localroute.android.shortcuts.ShortcutMode.VLESS)
-            await(40000) { TelegramProxyRuntime.state.value.verified == true && TelegramProxyRuntime.state.value.message.contains("через DPI") }
+            await(40000) { VlessRuntime.state.value.state==TunnelState.Disconnected }
+            assertEquals(TelegramProxyPhase.LISTENING, TelegramProxyRuntime.state.value.phase)
+            TelegramMtprotoProbe.check(TelegramProxySettings(context).secret())
             assertEquals(TunnelState.Disconnected, VlessRuntime.state.value.state)
             assertEquals(org.localroute.android.localdpi.EnginePhase.ACTIVE, org.localroute.android.localdpi.LocalDpiRuntime.state.value.phase)
         } finally {

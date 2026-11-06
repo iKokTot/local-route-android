@@ -36,6 +36,7 @@ class SharedRouteHost(
     private val profile = ProfileStore(activity)
     private val servers = VlessStore(activity)
     private val telegram = TelegramProxySettings(activity)
+    private val updates = org.localroute.android.updates.UpdateStore(activity)
     private val openFlux by lazy { org.localroute.android.openflux.OpenFluxStore(activity) }
     private fun stopOpenFlux() {
         if(org.localroute.android.openflux.OpenFluxRuntime.active()) activity.startService(Intent(activity,org.localroute.android.openflux.OpenFluxVpnService::class.java).setAction(org.localroute.android.openflux.OpenFluxVpnService.STOP))
@@ -108,7 +109,7 @@ class SharedRouteHost(
         val method = request.optString("method")
         activity.lifecycleScope.launch {
             if (webView.url?.startsWith(ORIGIN) != true) return@launch
-            val readonly = method == "readState"
+            val readonly = method in setOf("readState", "checkUpdates", "dismissUpdate", "openUpdate")
             val stopping = method in setOf("stopAll", "stopEngine", "stopTelegram", "stopVless", "stopOpenFlux")
             if (!readonly && !stopping && operation?.isActive == true) { reply(requestId, JSONObject().put("ok",false).put("message","Дождитесь завершения операции или остановите её.")); return@launch }
             if (stopping) { operation?.cancelAndJoin(); operation = null; operationName = null }
@@ -174,7 +175,7 @@ class SharedRouteHost(
         val diagnostic = JSONArray().put(JSONObject().put("label","DPI").put("value",dpi.message).put("level",if(dpiActive())"ok" else "neutral"))
             .put(JSONObject().put("label","VPN").put("value",VlessRuntime.state.value.message).put("level",if(vpnActive())"ok" else "neutral"))
             .put(JSONObject().put("label","Telegram").put("value",tg.message).put("level",if(tgActive())"ok" else "neutral"))
-        return JSONObject().put("appVersion",BuildConfig.VERSION_NAME).put("platform","android")
+        return JSONObject().put("appVersion",BuildConfig.VERSION_NAME).put("platform","android").put("updates", updates.state())
             .put("guideCompleted",activity.getSharedPreferences("local_route",android.content.Context.MODE_PRIVATE).getBoolean("guide_completed_v3",false))
             .put("catalog",JSONObject().put("dpiServices",JSONObject().put("youtube","YouTube").put("discord","Discord")).put("vlessServices",vpnLabels)
                 .put("strategies",JSONArray().also { list -> candidates.forEach { list.put(JSONObject().put("id",it.id).put("label",it.title)) } }).put("autoStrategyIds",array(candidates.map { it.id })))
@@ -310,6 +311,13 @@ class SharedRouteHost(
             "open" -> {
                 val url=payload as? String ?: ""; require(url in setOf("https://t.me/localroutedpi","https://max.ru/channel_LocalRoute","https://github.com/iKokTot/local-route"))
                 activity.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))
+            }
+            "checkUpdates" -> return response(updates.check(payload == true))
+            "dismissUpdate" -> { updates.dismiss(payload == true); return response() }
+            "openUpdate" -> {
+                val url = updates.releaseToOpen() ?: return response("Совместимое обновление пока не найдено.")
+                activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                return response("Открыта страница выпуска. Выберите APK; установку подтвердите в Android.")
             }
             "exportDiagnostics" -> {
                 VpnDiagnostics.stopCapture()

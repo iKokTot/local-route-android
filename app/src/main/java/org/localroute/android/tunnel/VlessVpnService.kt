@@ -286,7 +286,6 @@ class VlessVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
     override fun usePlatformBridge(): Boolean = false
     override fun usePlatformShell(): Boolean = false
-    override fun useProcFS(): Boolean = false
 
     override fun connectSSHAgent(): Int = -1
     override fun getSystemProxyStatus(): SystemProxyStatus = SystemProxyStatus().apply { available = false; enabled = false }

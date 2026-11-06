@@ -1,7 +1,7 @@
-# OpenFlux preview 0.24.13
+# OpenFlux integration (Android 0.24.17)
 
-Experimental standalone Android IPv4 VPN using OpenFlux v0.13.0, revision
-`4f9c786cdd1d9fcd0c133e2e0fec0c5a12522610` (GPL-3.0-or-later).
+Experimental standalone Android IPv4 VPN using OpenFlux v0.17.1, revision
+`f492a1a33b7581ad8f88118f97e0b866adda3cdc` (GPL-3.0-or-later).
 This does not supply an exit node, promise access in a restricted network, or
 combine the OpenFlux tunnel with DPI/VLESS. Starting either mode stops the other.
 Existing application VPN exclusions apply. Stream/PHP mode is not supported yet.
@@ -26,7 +26,7 @@ NDK link flag `-checklinkname=0` is needed by upstream anet's Go runtime linkage
 Do not publish a binary without providing this adapter and corresponding pinned
 upstream sources, license and dependency notices alongside it.
 
-## Verification, 2026-10-21
+## Historical verification of 0.24.13, 2026-10-21
 
 - 62 release unit tests passed.
 - 17 emulator tests passed (OpenFlux native integration and shared interface).

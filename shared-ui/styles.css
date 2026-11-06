@@ -345,3 +345,11 @@ footer { margin-top: 32px; color: var(--on-surface-variant); font-size: 11px; }
 .recovery-actions { display:flex;flex-direction:column;gap:10px; }
 .recovery-actions button { min-height:48px; }
 .mode-help { white-space:nowrap; }
+.update-actions { display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px; }
+.update-actions button { min-height:48px;max-width:100%;white-space:normal; }
+#update-card h2 { font-size:1.25rem; }
+#update-card p,#update-status { overflow-wrap:anywhere; }
+#update-notes { white-space:pre-wrap;max-height:200px;overflow-y:auto; }
+#update-card details { margin-top:12px; }
+#update-settings { margin-top:16px; }
+#update-card { margin-bottom:16px; }

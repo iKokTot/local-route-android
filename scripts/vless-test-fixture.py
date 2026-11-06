@@ -16,8 +16,9 @@ import threading
 import http.server
 
 class LocalHandler(http.server.BaseHTTPRequestHandler):
+    body = b'local-route-dpi-fixture'
     def do_GET(self):
-        body = b'local-route-dpi-fixture'
+        body = self.body
         self.send_response(200)
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
@@ -133,11 +134,19 @@ class Handler(socketserver.StreamRequestHandler):
 parser = argparse.ArgumentParser()
 parser.add_argument('--cert')
 parser.add_argument('--key')
+parser.add_argument('--openflux', action='store_true', help='Also serve local OpenFlux HTTP/UDP probe destinations')
 args = parser.parse_args()
 local_http = http.server.ThreadingHTTPServer(('127.0.0.1', 18445), LocalHandler)
 local_udp = socketserver.ThreadingUDPServer(('127.0.0.1', 18446), UdpHandler)
 threading.Thread(target=local_http.serve_forever, daemon=True).start()
 threading.Thread(target=local_udp.serve_forever, daemon=True).start()
+if args.openflux:
+    class OpenFluxHandler(LocalHandler):
+        body = b'local-route-openflux-tun-fixture'
+    flux_http = http.server.ThreadingHTTPServer(('127.0.0.1', 18083), OpenFluxHandler)
+    flux_udp = socketserver.ThreadingUDPServer(('127.0.0.1', 18084), UdpHandler)
+    threading.Thread(target=flux_http.serve_forever, daemon=True).start()
+    threading.Thread(target=flux_udp.serve_forever, daemon=True).start()
 if args.cert and args.key:
     secure = socketserver.ThreadingTCPServer(('127.0.0.1', 18444), Handler)
     secure.daemon_threads = True

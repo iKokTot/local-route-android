@@ -1,4 +1,4 @@
-// Local Route adapter for OpenFlux v0.13.0. GPL-3.0-or-later.
+// Local Route adapter for OpenFlux v0.17.1. GPL-3.0-or-later.
 // Credentials arrive only on stdin. Stdout contains fixed status events, never core logs.
 package main
 

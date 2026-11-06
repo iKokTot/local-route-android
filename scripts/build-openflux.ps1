@@ -4,8 +4,11 @@ param(
  [Parameter(Mandatory=$true)][string]$Ndk
 )
 $ErrorActionPreference='Stop'
+$Core=(Resolve-Path -LiteralPath $Core).Path
+$Go=(Resolve-Path -LiteralPath $Go).Path
+$Ndk=(Resolve-Path -LiteralPath $Ndk).Path
 $revision = git -C $Core rev-parse HEAD
-if ($revision -ne '4f9c786cdd1d9fcd0c133e2e0fec0c5a12522610') { throw 'Unexpected OpenFlux source revision' }
+if ($revision -ne 'f492a1a33b7581ad8f88118f97e0b866adda3cdc') { throw 'Unexpected OpenFlux source revision' }
 $repo=Split-Path $PSScriptRoot
 $destination=Join-Path $Core 'mobile/cmd/localroute'
 New-Item -ItemType Directory -Force -Path $destination | Out-Null
@@ -20,7 +23,7 @@ try {
   $env:CC="$clang --target=$triple"
   $output=Join-Path $repo "app/build/generated/openfluxJniLibs/$($target[0])/libopenflux.so"
   New-Item -ItemType Directory -Force -Path (Split-Path $output) | Out-Null
-  & $Go build -trimpath -buildmode=pie '-ldflags=-s -w -checklinkname=0' -o $output ./cmd/localroute
+  & $Go build -buildvcs=false -trimpath -buildmode=pie '-ldflags=-s -w -checklinkname=0' -o $output ./cmd/localroute
   if ($LASTEXITCODE -ne 0) { throw "OpenFlux build failed: $($target[0])" }
  }
  $fixture=Join-Path $Core 'mobile/cmd/localroute-fixture'
@@ -29,8 +32,9 @@ try {
  $env:GOARCH='amd64'; $env:CC="$clang --target=x86_64-linux-android26"
  $output=Join-Path $repo 'app/build/generated/openfluxTestJniLibs/x86_64/libopenflux_fixture.so'
  New-Item -ItemType Directory -Force -Path (Split-Path $output) | Out-Null
- & $Go build -trimpath -buildmode=pie '-ldflags=-s -w -checklinkname=0' -o $output ./cmd/localroute-fixture
+ & $Go build -buildvcs=false -trimpath -buildmode=pie '-ldflags=-s -w -checklinkname=0' -o $output ./cmd/localroute-fixture
  if($LASTEXITCODE -ne 0) { throw 'Fixture build failed' }
+ Set-Content -LiteralPath (Join-Path $repo 'app/build/generated/openfluxJniLibs/revision.txt') -Value $revision -Encoding ascii
 } finally {
  Pop-Location
  'GOOS','GOARCH','GOARM','CGO_ENABLED','CC' | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }

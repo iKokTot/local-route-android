@@ -51,7 +51,7 @@ object AndroidStrategies {
         // LOCAL_DPI must remain a loopback-only proxy controlled by the app.
         // Do not allow a pasted profile to replace the listener or redirect to
         // another proxy/server.
-        val forbidden = setOf("-i", "--ip", "-p", "--port", "-C", "--connect-to", "-P", "--protect-path", "-D", "--daemon", "-w", "--pidfile")
+        val forbidden = setOf("-i", "--ip", "-p", "--port", "-C", "--connect-to", "-P", "--protect-path", "-D", "--daemon", "-w", "--pidfile", "-h", "--help", "-v", "--version", "-E", "--transparent")
         if (args.any { arg -> forbidden.any { option -> arg == option || (option.length == 2 && arg.startsWith(option) && arg.length > 2) || arg.startsWith("$option=") } }) {
             return null
         }

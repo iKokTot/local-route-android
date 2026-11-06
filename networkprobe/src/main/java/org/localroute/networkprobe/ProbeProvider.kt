@@ -59,6 +59,20 @@ class ProbeProvider : ContentProvider() {
                     error("Real UDP payload was not returned")
                 }
             }
+            if(uri.getQueryParameter("httpscheck")=="1") {
+                val sites=listOf("https://example.com/","https://www.cloudflare.com/","https://www.wikipedia.org/")
+                val site=sites.getOrNull(uri.getQueryParameter("site")?.toIntOrNull() ?: 0) ?: error("Unknown probe site")
+                val connection=requireNotNull(connectivity.activeNetwork).openConnection(URL(site)) as HttpURLConnection
+                try {
+                    connection.connectTimeout=10000;connection.readTimeout=10000
+                    connection.setRequestProperty("Connection","close")
+                    val status=connection.responseCode
+                    check(status in 100..599)
+                    // A site-level 403 is still a real TLS handshake and HTTP response.
+                    // Certificate validation is Android's default, never disabled.
+                    return MatrixCursor(arrayOf("result")).apply { addRow(arrayOf("HTTPS_OK:$status")) }
+                } finally {connection.disconnect()}
+            }
             val host = if (uri.getQueryParameter("dns") == "1") "example.com" else "93.184.216.34"
             val url = if(uri.getQueryParameter("openflux")=="1") "http://10.0.2.2:18083/" else if (uri.getQueryParameter("normal") == "1") "https://example.com/" else "http://$host:18089/route-check"
             // This provider survives multiple TUN replacements. Bind each fresh request to

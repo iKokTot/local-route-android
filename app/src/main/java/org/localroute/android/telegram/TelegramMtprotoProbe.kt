@@ -13,6 +13,7 @@ import javax.crypto.spec.SecretKeySpec
 /** Asks for a public protocol response; never authenticates or reads user messages. */
 object TelegramMtprotoProbe {
     fun check(secretHex: String, port: Int = 1443, dc: Int = 2, timeout: Int = 15000) {
+        require(dc in 1..5 || dc in -5..-1)
         val secret = secretHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         val random = SecureRandom()
         val raw = ByteArray(64).also(random::nextBytes)
@@ -25,7 +26,7 @@ object TelegramMtprotoProbe {
         val stream = enc.update(ByteArray(64))
         repeat(4) { raw[56 + it] = (0xdd xor (stream[56 + it].toInt() and 255)).toByte() }
         raw[60] = (dc xor (stream[60].toInt() and 255)).toByte()
-        raw[61] = stream[61]
+        raw[61] = ((dc ushr 8) xor (stream[61].toInt() and 255)).toByte()
         val nonce = ByteArray(16).also(random::nextBytes)
         val request = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
             .putInt(40).putLong(0).putLong((System.currentTimeMillis() / 1000) shl 32)

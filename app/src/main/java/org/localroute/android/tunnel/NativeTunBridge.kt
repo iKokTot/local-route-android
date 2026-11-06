@@ -6,14 +6,14 @@ import io.github.dovecoteescapee.byedpi.core.TProxyService
 object NativeTunBridge {
     private var owner: Any? = null
     @Synchronized fun start(token: Any, path: String, fd: Int) {
-        if(owner!=null) TProxyService.TProxyStopService()
+        if(owner!=null) check(TProxyService.TProxyStopService()) { "Не удалось остановить сетевой адаптер" }
         owner=null
-        TProxyService.TProxyStartService(path,fd)
+        check(TProxyService.TProxyStartService(path,fd)) { "Не удалось запустить сетевой адаптер" }
         owner=token
     }
     @Synchronized fun stop(token: Any) {
         if(owner!==token) return
-        TProxyService.TProxyStopService()
+        check(TProxyService.TProxyStopService()) { "Не удалось остановить сетевой адаптер" }
         owner=null
     }
 }

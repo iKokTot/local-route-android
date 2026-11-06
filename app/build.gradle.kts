@@ -19,7 +19,7 @@ android {
     defaultConfig {
         applicationId = providers.gradleProperty("applicationId").getOrElse("org.localroute.community")
         manifestPlaceholders["applicationLabel"] = providers.gradleProperty("applicationLabel").getOrElse("Local Route")
-        minSdk = 26; targetSdk = 35; versionCode = 39; versionName = "0.24.15"
+        minSdk = 26; targetSdk = 35; versionCode = 41; versionName = "0.24.17"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
@@ -74,7 +74,7 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // Pinned GPL-3.0 Android binding of sing-box for VLESS. The AAR is fetched
     // by prepareLibbox and verified before Gradle packages it.
-    implementation(files("libs/libbox.aar"))
+    implementation(files("libs/libbox-1.14.4.aar"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
@@ -110,6 +110,10 @@ val prepareHevSources = tasks.register("prepareHevSources") {
 
 val checkOpenFlux = tasks.register("checkOpenFlux") {
     doLast {
+        val revision=layout.buildDirectory.file("generated/openfluxJniLibs/revision.txt").get().asFile
+        check(revision.isFile && revision.readText().trim()=="f492a1a33b7581ad8f88118f97e0b866adda3cdc") {
+            "Rebuild pinned OpenFlux 0.17.1 helpers; see docs/OPENFLUX.md"
+        }
         listOf("arm64-v8a","armeabi-v7a","x86_64").forEach { abi ->
             check(layout.buildDirectory.file("generated/openfluxJniLibs/$abi/libopenflux.so").get().asFile.isFile) {
                 "Build pinned OpenFlux helpers first; see docs/OPENFLUX.md ($abi missing)"
@@ -124,14 +128,14 @@ tasks.register<Exec>("buildHevSocks5Tunnel") {
     dependsOn(prepareHevSources)
     val ndk = android.ndkDirectory
     executable = if (System.getProperty("os.name").startsWith("Windows", true)) "$ndk\\ndk-build.cmd" else "$ndk/ndk-build"
-    args("NDK_PROJECT_PATH=build/intermediates/ndkBuild", "NDK_LIBS_OUT=src/main/jniLibs", "APP_BUILD_SCRIPT=src/main/jni/Android.mk", "NDK_APPLICATION_MK=src/main/jni/Application.mk")
+    args("-j4", "APP_MODULES=hev-socks5-tunnel", "NDK_PROJECT_PATH=build/intermediates/ndkBuild", "NDK_LIBS_OUT=src/main/jniLibs", "APP_BUILD_SCRIPT=src/main/jni/Android.mk", "NDK_APPLICATION_MK=src/main/jni/Application.mk")
 }
 tasks.named("preBuild").configure { dependsOn("buildHevSocks5Tunnel") }
 
 val prepareLibbox = tasks.register("prepareLibbox") {
-    val artifact = file("libs/libbox.aar")
-    val url = "https://github.com/singbox-android/libbox/releases/download/1.14.0/libbox.aar"
-    val expectedSha256 = "13fbeabcb4622250762afa1b137daaba861a4dc1875643d18621339912f32330"
+    val artifact = file("libs/libbox-1.14.4.aar")
+    val url = "https://github.com/singbox-android/libbox/releases/download/1.14.4/libbox.aar"
+    val expectedSha256 = "d2685924a657705beda44e94c6dc499e781df1ad20d65474e3591ec2f8b96465"
     outputs.file(artifact)
     doLast {
         artifact.parentFile.mkdirs()
@@ -144,15 +148,16 @@ val prepareLibbox = tasks.register("prepareLibbox") {
 tasks.named("preBuild").configure { dependsOn(prepareLibbox) }
 
 val prepareTgws = tasks.register("prepareTgws") {
-    val archive = layout.buildDirectory.file("downloads/tgws-2.5.4.apk")
+    inputs.property("version", "2.7.0")
+    val archive = layout.buildDirectory.file("downloads/tgws-2.7.0.apk")
     val destination = layout.buildDirectory.dir("generated/tgwsJniLibs")
     outputs.dir(destination)
     doLast {
         val apk = archive.get().asFile
         apk.parentFile.mkdirs()
-        if (!apk.isFile) URL("https://github.com/valnesfjord/tg-ws-proxy-rs/releases/download/v2.5.4/tg-ws-proxy-rs-android-2.5.4-universal.apk").openStream().use { input -> apk.outputStream().use(input::copyTo) }
+        if (!apk.isFile) URL("https://github.com/valnesfjord/tg-ws-proxy-rs/releases/download/v2.7.0/tg-ws-proxy-rs-android-2.7.0-universal.apk").openStream().use { input -> apk.outputStream().use(input::copyTo) }
         val digest = MessageDigest.getInstance("SHA-256").digest(apk.readBytes()).joinToString("") { it.toUByte().toString(16).padStart(2, '0') }
-        check(digest == "04e40c1cab8dca82e81749ec9829bdc5d8420a301469e84b139b9172b5524f08") { "TGWs artifact checksum mismatch" }
+        check(digest == "c88cc54442958803eb8a99abc7d2c2052dcd33ca61adf6d2a86d7e28eed6d0ae") { "TGWs artifact checksum mismatch" }
         ZipFile(apk).use { zip ->
             listOf("arm64-v8a", "armeabi-v7a", "x86_64").forEach { abi ->
                 val entry = zip.getEntry("lib/$abi/libtg_ws_proxy_jni.so") ?: error("Missing TGWs ABI: $abi")

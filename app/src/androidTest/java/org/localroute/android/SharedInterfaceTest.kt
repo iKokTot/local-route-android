@@ -15,6 +15,21 @@ import java.util.concurrent.TimeUnit
 
 /** Проверка интерфейса на установленном APK без смены профилей и запуска сетевых движков. */
 class SharedInterfaceTest {
+    @Test fun updateCardIsCompactEscapedAndDoesNotDisableConnectionControls() {
+        attach()
+        js("navigate('control');window.savedUpdates=state.updates;state.updates={available:true,showCard:true,version:'0.24.17',notes:'<img src=x onerror=alert(1)>',checking:false};renderUpdates()")
+        assertEquals(true,js("Boolean(document.querySelector('#update-card').offsetParent)"))
+        assertEquals(false,js("document.querySelector('#update-card details').open"))
+        assertEquals(false,js("Boolean(document.querySelector('#update-notes img'))"))
+        assertEquals(false,js("document.querySelector('#start-dpi').disabled"))
+        js("navigate('settings')")
+        assertEquals(true,js("Boolean(document.querySelector('#check-updates').offsetParent)"))
+        assertEquals(true,js("Boolean(document.querySelector('#settings-download-update').offsetParent)"))
+        js("state.updates={available:false,showCard:false,message:'Не удалось проверить обновления. Попробуйте позже.'};renderUpdates()")
+        assertEquals(false,js("Boolean(document.querySelector('#update-card').offsetParent)"))
+        assertEquals(true,js("document.querySelector('#update-status').textContent.includes('Попробуйте позже')"))
+        js("state.updates=window.savedUpdates;renderUpdates();navigate('control')")
+    }
     @Test fun dpiPrimaryStartsWithoutPresetWizardAndStopsAgain() {
         attach()
         js("navigate('lab')")

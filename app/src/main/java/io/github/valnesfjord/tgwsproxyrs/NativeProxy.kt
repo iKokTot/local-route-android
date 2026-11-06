@@ -3,7 +3,7 @@ package io.github.valnesfjord.tgwsproxyrs
 import org.localroute.android.telegram.TelegramProxyRuntime
 import androidx.annotation.Keep
 
-/** Upstream MIT JNI ABI, reviewed against tg-ws-proxy-rs v2.5.4 android.rs. */
+/** Upstream MIT JNI ABI, reviewed against tg-ws-proxy-rs v2.7.0 android.rs. */
 @Keep
 object NativeProxy {
     init { System.loadLibrary("tg_ws_proxy_jni") }

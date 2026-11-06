@@ -1,6 +1,6 @@
 # TGWs Rust dependency notices
 
-Pinned tg-ws-proxy-rs 2.5.4 Cargo.lock; conservative superset including host/dev crates.
+Pinned tg-ws-proxy-rs 2.7.0 Cargo.lock; conservative superset including host/dev crates.
 
 * aes-0.8.4: MIT OR Apache-2.0
 * aho-corasick-1.1.4: Unlicense OR MIT
@@ -10,6 +10,7 @@ Pinned tg-ws-proxy-rs 2.5.4 Cargo.lock; conservative superset including host/dev
 * anstyle-query-1.1.5: MIT OR Apache-2.0
 * anstyle-wincon-3.0.11: MIT OR Apache-2.0
 * async-http-proxy-1.2.5: BSD-3-Clause
+* atomic-waker-1.1.2: Apache-2.0 OR MIT
 * base64-0.13.1: MIT/Apache-2.0
 * base64-0.22.1: MIT OR Apache-2.0
 * block-buffer-0.10.4: MIT OR Apache-2.0
@@ -32,7 +33,9 @@ Pinned tg-ws-proxy-rs 2.5.4 Cargo.lock; conservative superset including host/dev
 * digest-0.10.7: MIT OR Apache-2.0
 * displaydoc-0.2.7: MIT OR Apache-2.0
 * either-1.17.0: MIT OR Apache-2.0
+* equivalent-1.0.2: Apache-2.0 OR MIT
 * find-msvc-tools-0.1.9: MIT OR Apache-2.0
+* fnv-1.0.7: Apache-2.0 / MIT
 * form_urlencoded-1.2.2: MIT OR Apache-2.0
 * futures-core-0.3.33: MIT OR Apache-2.0
 * futures-macro-0.3.33: MIT OR Apache-2.0
@@ -42,6 +45,8 @@ Pinned tg-ws-proxy-rs 2.5.4 Cargo.lock; conservative superset including host/dev
 * generic-array-0.14.7: MIT
 * getrandom-0.2.17: MIT OR Apache-2.0
 * getrandom-0.3.4: MIT OR Apache-2.0
+* h2-0.4.13: MIT
+* hashbrown-0.17.1: MIT OR Apache-2.0
 * heck-0.5.0: MIT OR Apache-2.0
 * hex-0.4.3: MIT OR Apache-2.0
 * hmac-0.12.1: MIT OR Apache-2.0
@@ -56,6 +61,7 @@ Pinned tg-ws-proxy-rs 2.5.4 Cargo.lock; conservative superset including host/dev
 * icu_provider-2.2.0: Unicode-3.0
 * idna-1.1.0: MIT OR Apache-2.0
 * idna_adapter-1.2.2: Apache-2.0 OR MIT
+* indexmap-2.14.0: Apache-2.0 OR MIT
 * inout-0.1.4: MIT OR Apache-2.0
 * ipnet-2.12.0: MIT OR Apache-2.0
 * is_terminal_polyfill-1.70.2: MIT OR Apache-2.0
@@ -95,7 +101,7 @@ Pinned tg-ws-proxy-rs 2.5.4 Cargo.lock; conservative superset including host/dev
 * regex-syntax-0.8.11: MIT OR Apache-2.0
 * ring-0.17.14: Apache-2.0 AND ISC
 * rustc_version-0.4.1: MIT OR Apache-2.0
-* rustls-0.23.45: Apache-2.0 OR ISC OR MIT
+* rustls-0.23.46: Apache-2.0 OR ISC OR MIT
 * rustls-pki-types-1.15.1: MIT OR Apache-2.0
 * rustls-webpki-0.103.15: ISC
 * same-file-1.0.6: Unlicense/MIT
@@ -131,6 +137,7 @@ Pinned tg-ws-proxy-rs 2.5.4 Cargo.lock; conservative superset including host/dev
 * tokio-rustls-0.26.4: MIT OR Apache-2.0
 * tokio-socks-0.5.3: MIT
 * tokio-tungstenite-0.24.0: MIT
+* tokio-util-0.7.18: MIT
 * tracing-0.1.44: MIT
 * tracing-attributes-0.1.31: MIT
 * tracing-core-0.1.36: MIT

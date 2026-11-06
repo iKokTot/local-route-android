@@ -11,4 +11,5 @@ release-signing.properties
 *.iml
 work/
 /app/libs/libbox.aar
+/app/libs/libbox-*.aar
 /app/src/main/assets/ui/
