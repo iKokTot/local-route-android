@@ -714,7 +714,7 @@ async function handleAction(button) {
     });
   }
   if (id === 'run-check' || id === 'refresh-log') { await refreshState(); return; }
-  const links = { 'open-release-channel': 'https://t.me/TheLocalRoute', 'open-max-channel': 'https://max.ru/channel_LocalRoute', 'open-repository': 'https://github.com/iKokTot/local-route' };
+  const links = { 'open-release-channel': 'https://t.me/localroutedpi', 'open-max-channel': 'https://max.ru/channel_LocalRoute', 'open-repository': 'https://github.com/iKokTot/local-route' };
   if (links[id]) await window.localRoute.open(links[id]);
 }
 document.addEventListener('click', (event) => {

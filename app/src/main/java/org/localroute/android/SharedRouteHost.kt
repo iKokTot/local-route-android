@@ -308,7 +308,7 @@ class SharedRouteHost(
             "stopAll" -> { stopOpenFlux(); stopDpi(); stopVpn(); stopTelegram(); awaitStopped(dpi=true,vpn=true) }
             "addTile" -> addTile(ShortcutMode.valueOf(payload as String))
             "open" -> {
-                val url=payload as? String ?: ""; require(url in setOf("https://t.me/TheLocalRoute","https://max.ru/channel_LocalRoute","https://github.com/iKokTot/local-route"))
+                val url=payload as? String ?: ""; require(url in setOf("https://t.me/localroutedpi","https://max.ru/channel_LocalRoute","https://github.com/iKokTot/local-route"))
                 activity.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))
             }
             "exportDiagnostics" -> {
